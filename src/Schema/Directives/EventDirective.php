@@ -38,23 +38,18 @@ class EventDirective extends BaseDirective implements FieldMiddleware
     /**
      * Resolve the field directive.
      *
-     * @param  \Nuwave\Lighthouse\Schema\Values\FieldValue  $value
+     * @param  \Nuwave\Lighthouse\Schema\Values\FieldValue  $fieldValue
      * @param  \Closure  $next
      * @return \Nuwave\Lighthouse\Schema\Values\FieldValue
      */
-    public function handleField(FieldValue $value, Closure $next): FieldValue
+    public function handleField(FieldValue $fieldValue, Closure $next): FieldValue
     {
-        $eventBaseName = $this->directiveArgValue('dispatch')
-            /*
-             * @deprecated The aliases for dispatch will be removed in v4
-             */
-            ?? $this->directiveArgValue('fire')
-            ?? $this->directiveArgValue('class');
+        $eventBaseName = $this->directiveArgValue('dispatch');
         $eventClassName = $this->namespaceClassName($eventBaseName);
-        $previousResolver = $value->getResolver();
+        $previousResolver = $fieldValue->getResolver();
 
         return $next(
-            $value->setResolver(
+            $fieldValue->setResolver(
                 function () use ($previousResolver, $eventClassName) {
                     $result = call_user_func_array($previousResolver, func_get_args());
 

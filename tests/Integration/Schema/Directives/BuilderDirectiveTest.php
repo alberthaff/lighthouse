@@ -15,7 +15,7 @@ class BuilderDirectiveTest extends DBTestCase
         $this->schema = '
         type Query {
             users(
-                limit: Int @builder(method: "'.addslashes(self::class).'@limit")
+                limit: Int @builder(method: "'.$this->qualifyTestResolver('limit').'")
             ): [User!]! @all
         }
         
@@ -26,7 +26,7 @@ class BuilderDirectiveTest extends DBTestCase
 
         factory(User::class, 2)->create();
 
-        $this->query('
+        $this->graphQL('
         {
             users(limit: 1) {
                 id
@@ -35,6 +35,11 @@ class BuilderDirectiveTest extends DBTestCase
         ')->assertJsonCount(1, 'data.users');
     }
 
+    /**
+     * @param  \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder  $builder
+     * @param  int  $value
+     * @return \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder
+     */
     public function limit($builder, int $value)
     {
         return $builder->limit($value);

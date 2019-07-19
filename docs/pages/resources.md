@@ -11,6 +11,7 @@ sidebar: false
 
 ## Tutorials
 
+- [Building a GraphQL Server with Laravel](https://www.toptal.com/graphql/laravel-graphql-server-tutorial)
 - [Video Walkthrough by Christopher Moore](https://youtu.be/y19EaW2X7ac)
 - [GraphQL in Laravel done right](https://medium.com/@olivernybroe/graphql-in-laravel-done-right-9cf123d5601b)
 - [Testing GraphQL with Laravel](https://medium.com/@olivernybroe/testing-graphql-with-laravel-4d6201b40f68)
@@ -21,3 +22,8 @@ sidebar: false
 
 - [mll-lab/laravel-graphql-playground](https://github.com/mll-lab/laravel-graphql-playground)
 - [mll-lab/graphql-php-scalars](https://github.com/mll-lab/graphql-php-scalars)
+- [marvinrabe/laravel-graphql-test](https://github.com/marvinrabe/laravel-graphql-test)
+
+## Recommended Clients
+
+- [Buoy - A Lighthouse-client for Angular](https://ngx-buoy.com)

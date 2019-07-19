@@ -64,7 +64,7 @@ class BelongsToTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             user {
                 company {
@@ -104,7 +104,7 @@ class BelongsToTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             user {
                 account {
@@ -149,7 +149,7 @@ class BelongsToTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             user {
                 company {
@@ -202,9 +202,9 @@ class BelongsToTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
-            products(count: 2) {     
+            products(first: 2) {     
                 data{
                     barcode
                     uuid

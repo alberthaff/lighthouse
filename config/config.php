@@ -4,44 +4,32 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | GraphQL endpoint
+    | Route Configuration
     |--------------------------------------------------------------------------
     |
-    | Set the endpoint to which the GraphQL server responds.
-    | The default route endpoint is "yourdomain.com/graphql".
-    |
-    */
-
-    'route_name' => 'graphql',
-
-    /*
-    |--------------------------------------------------------------------------
-    | Enable GET requests
-    |--------------------------------------------------------------------------
-    |
-    | This setting controls if GET requests to the GraphQL endpoint are allowed.
-    |
-    */
-
-    'route_enable_get' => true,
-
-    /*
-    |--------------------------------------------------------------------------
-    | Route configuration
-    |--------------------------------------------------------------------------
-    |
-    | Additional configuration for the route group https://lumen.laravel.com/docs/routing#route-groups
-    |
-    | Beware that middleware defined here runs before the GraphQL execution phase.
-    | This means that errors will cause the whole query to abort and return a
-    | response that is not spec-compliant. It is preferable to use directives
-    | to add middleware to single fields in the schema.
-    | Read more https://lighthouse-php.com/docs/auth.html#apply-auth-middleware
+    | Controls the HTTP route that your GraphQL server responds to.
+    | You may set `route` => false, to disable the default route
+    | registration and take full control.
     |
     */
 
     'route' => [
-        'prefix' => '',
+        /*
+         * The URI the endpoint responds to, e.g. mydomain.com/graphql.
+         */
+        'uri' => 'graphql',
+
+        /*
+         * Lighthouse creates a named route for convenient URL generation and redirects.
+         */
+        'name' => 'graphql',
+
+        /*
+         *
+         * Beware that middleware defined here runs before the GraphQL execution phase,
+         * so you have to take extra care to return spec-compliant error responses.
+         * To apply middleware on a field level, use the @middleware directive.
+         */
         'middleware' => [
             \Nuwave\Lighthouse\Support\Http\Middleware\AcceptJson::class,
         ],
@@ -49,7 +37,7 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Schema declaration
+    | Schema Declaration
     |--------------------------------------------------------------------------
     |
     | This is a path that points to where your GraphQL schema is located
@@ -67,15 +55,16 @@ return [
     | Schema Cache
     |--------------------------------------------------------------------------
     |
-    | A large part of schema generation is parsing the schema into an AST.
-    | This operation is pretty expensive so it is recommended to enable
-    | caching in production mode, especially for large schemas.
+    | A large part of schema generation consists of parsing and AST manipulation.
+    | This operation is very expensive, so it is highly recommended to enable
+    | caching of the final schema to optimize performance of large schemas.
     |
     */
 
     'cache' => [
-        'enable' => env('LIGHTHOUSE_CACHE_ENABLE', false),
+        'enable' => env('LIGHTHOUSE_CACHE_ENABLE', true),
         'key' => env('LIGHTHOUSE_CACHE_KEY', 'lighthouse-schema'),
+        'ttl' => env('LIGHTHOUSE_CACHE_TTL', null),
     ],
 
     /*
@@ -107,13 +96,12 @@ return [
     |
     | Control how Lighthouse handles security related query validation.
     | This configures the options from http://webonyx.github.io/graphql-php/security/
-    | A setting of "0" means that the validation rule is disabled.
     |
     */
 
     'security' => [
-        'max_query_complexity' => 0,
-        'max_query_depth' => 0,
+        'max_query_complexity' => \GraphQL\Validator\Rules\QueryComplexity::DISABLED,
+        'max_query_depth' => \GraphQL\Validator\Rules\QueryDepth::DISABLED,
         'disable_introspection' => \GraphQL\Validator\Rules\DisableIntrospection::DISABLED,
     ],
 
@@ -129,6 +117,19 @@ return [
     */
 
     'paginate_max_count' => null,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Pagination Amount Argument
+    |--------------------------------------------------------------------------
+    |
+    | Set the name to use for the generated argument on paginated fields
+    | that controls how many results are returned.
+    | This setting will be removed in v5.
+    |
+    */
+
+    'pagination_amount_argument' => 'first',
 
     /*
     |--------------------------------------------------------------------------
@@ -156,17 +157,6 @@ return [
     'error_handlers' => [
         \Nuwave\Lighthouse\Execution\ExtensionErrorHandler::class,
     ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | GraphQL Controller
-    |--------------------------------------------------------------------------
-    |
-    | Specify which controller (and method) you want to handle GraphQL requests.
-    |
-    */
-
-    'controller' => \Nuwave\Lighthouse\Support\Http\Controllers\GraphQLController::class.'@query',
 
     /*
     |--------------------------------------------------------------------------
@@ -203,19 +193,6 @@ return [
     */
 
     'transactional_mutations' => true,
-
-    /*
-    |--------------------------------------------------------------------------
-    | New Between Directives
-    |--------------------------------------------------------------------------
-    |
-    | Use the new @whereBetween and @whereBetween directives that will
-    | replace their current implementation in v4 by setting this to true.
-    | As the old versions are removed, this will not have an effect anymore.
-    |
-    */
-
-    'new_between_directives' => false,
 
     /*
     |--------------------------------------------------------------------------

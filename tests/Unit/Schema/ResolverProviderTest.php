@@ -5,7 +5,7 @@ namespace Tests\Unit\Schema;
 use Closure;
 use Tests\TestCase;
 use Nuwave\Lighthouse\Schema\ResolverProvider;
-use Nuwave\Lighthouse\Schema\Values\NodeValue;
+use Nuwave\Lighthouse\Schema\Values\TypeValue;
 use Nuwave\Lighthouse\Schema\AST\PartialParser;
 use Nuwave\Lighthouse\Schema\Values\FieldValue;
 use Nuwave\Lighthouse\Exceptions\DefinitionException;
@@ -21,7 +21,7 @@ class ResolverProviderTest extends TestCase
     {
         parent::setUp();
 
-        $this->resolverProvider = new ResolverProvider();
+        $this->resolverProvider = new ResolverProvider;
     }
 
     /**
@@ -83,8 +83,8 @@ class ResolverProviderTest extends TestCase
         }
         ");
 
-        $nodeValue = new NodeValue($queryType);
+        $typeValue = new TypeValue($queryType);
 
-        return new FieldValue($nodeValue, $queryType->fields[0]);
+        return new FieldValue($typeValue, $queryType->fields[0]);
     }
 }

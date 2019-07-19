@@ -15,7 +15,7 @@ class BroadcastDirective extends BaseDirective implements FieldMiddleware
      *
      * @return string
      */
-    public function name()
+    public function name(): string
     {
         return 'broadcast';
     }
@@ -23,22 +23,24 @@ class BroadcastDirective extends BaseDirective implements FieldMiddleware
     /**
      * Resolve the field directive.
      *
-     * @param  \Nuwave\Lighthouse\Schema\Values\FieldValue  $value
+     * @param  \Nuwave\Lighthouse\Schema\Values\FieldValue  $fieldValue
      * @param  \Closure  $next
      * @return \Nuwave\Lighthouse\Schema\Values\FieldValue
      */
-    public function handleField(FieldValue $value, Closure $next): FieldValue
+    public function handleField(FieldValue $fieldValue, Closure $next): FieldValue
     {
-        $value = $next($value);
-        $resolver = $value->getResolver();
-        $subscriptionField = $this->directiveArgValue('subscription');
-        $shouldQueue = $this->directiveArgValue('shouldQueue');
+        // Ensure this is run after the other field middleware directives
+        $fieldValue = $next($fieldValue);
+        $resolver = $fieldValue->getResolver();
 
-        return $value->setResolver(function () use ($resolver, $subscriptionField, $shouldQueue) {
+        return $fieldValue->setResolver(function () use ($resolver) {
             $resolved = call_user_func_array($resolver, func_get_args());
 
+            $subscriptionField = $this->directiveArgValue('subscription');
+            $shouldQueue = $this->directiveArgValue('shouldQueue');
+
             if ($resolved instanceof Deferred) {
-                $resolved->then(function ($root) use ($subscriptionField, $shouldQueue) {
+                $resolved->then(function ($root) use ($subscriptionField, $shouldQueue): void {
                     Subscription::broadcast($subscriptionField, $root, $shouldQueue);
                 });
             } else {

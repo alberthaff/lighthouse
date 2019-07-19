@@ -29,7 +29,6 @@ class CacheDirectiveTest extends DBTestCase
      */
     public function itCanStoreResolverResultInCache(): void
     {
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type User {
             id: ID!
@@ -37,11 +36,11 @@ class CacheDirectiveTest extends DBTestCase
         }
         
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
-        $this->query('
+        $this->graphQL('
         {
             user {
                 name
@@ -63,7 +62,6 @@ class CacheDirectiveTest extends DBTestCase
      */
     public function itCanPlaceCacheKeyOnAnyField(): void
     {
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type User {
             id: ID!
@@ -72,11 +70,11 @@ class CacheDirectiveTest extends DBTestCase
         }
         
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
-        $this->query('
+        $this->graphQL('
         {
             user {
                 name
@@ -102,7 +100,6 @@ class CacheDirectiveTest extends DBTestCase
         $this->be($user);
         $cacheKey = "auth:{$user->getKey()}:user:1:name";
 
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type User {
             id: ID!
@@ -110,11 +107,11 @@ class CacheDirectiveTest extends DBTestCase
         }
         
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
-        $this->query('
+        $this->graphQL('
         {
             user {
                 name
@@ -129,6 +126,39 @@ class CacheDirectiveTest extends DBTestCase
         ]);
 
         $this->assertSame('foobar', $this->cache->get($cacheKey));
+    }
+
+    /**
+     * @test
+     */
+    public function itFallsBackToPublicCacheIfUserIsNotAuthenticated(): void
+    {
+        $this->schema = "
+        type User {
+            id: ID!
+            name: String @cache(private: true)
+        }
+        
+        type Query {
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
+        }
+        ";
+
+        $this->graphQL('
+        {
+            user {
+                name
+            }
+        }
+        ')->assertJson([
+            'data' => [
+                'user' => [
+                    'name' => 'foobar',
+                ],
+            ],
+        ]);
+
+        $this->assertSame('foobar', $this->cache->get('user:1:name'));
     }
 
     /**
@@ -149,9 +179,9 @@ class CacheDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
-            users(count: 5) {
+            users(first: 5) {
                 data {
                     id
                     name
@@ -160,7 +190,7 @@ class CacheDirectiveTest extends DBTestCase
         }
         ');
 
-        $result = $this->cache->get('query:users:count:5');
+        $result = $this->cache->get('query:users:first:5');
 
         $this->assertInstanceOf(LengthAwarePaginator::class, $result);
         $this->assertCount(5, $result);
@@ -199,7 +229,7 @@ class CacheDirectiveTest extends DBTestCase
             user(id: '.$user->getKey().') {
                 id
                 name
-                posts(count: 3) {
+                posts(first: 3) {
                     data {
                         title
                     }
@@ -215,13 +245,13 @@ class CacheDirectiveTest extends DBTestCase
             }
         });
 
-        $firstResponse = $this->query($query);
+        $firstResponse = $this->graphQL($query);
 
-        $posts = $this->cache->get("user:{$user->getKey()}:posts:count:3");
+        $posts = $this->cache->get("user:{$user->getKey()}:posts:first:3");
         $this->assertInstanceOf(LengthAwarePaginator::class, $posts);
         $this->assertCount(3, $posts);
 
-        $cachedResponse = $this->query($query);
+        $cachedResponse = $this->graphQL($query);
 
         $this->assertSame(1, $dbQueryCountForPost, 'This query should only run once and be cached on the second run.');
         $this->assertSame(
@@ -266,7 +296,7 @@ class CacheDirectiveTest extends DBTestCase
             user(id: '.$user->getKey().') {
                 id
                 name
-                posts(count: 3) {
+                posts(first: 3) {
                     data {
                         title
                     }
@@ -282,13 +312,13 @@ class CacheDirectiveTest extends DBTestCase
             }
         });
 
-        $firstResponse = $this->query($query);
+        $firstResponse = $this->graphQL($query);
 
-        $posts = $this->cache->tags($tags)->get("user:{$user->getKey()}:posts:count:3");
+        $posts = $this->cache->tags($tags)->get("user:{$user->getKey()}:posts:first:3");
         $this->assertInstanceOf(LengthAwarePaginator::class, $posts);
         $this->assertCount(3, $posts);
 
-        $cachedResponse = $this->query($query);
+        $cachedResponse = $this->graphQL($query);
 
         $this->assertSame(1, $dbQueryCountForPost, 'This query should only run once and be cached on the second run.');
         $this->assertSame(

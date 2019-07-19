@@ -141,12 +141,12 @@ class SubscriptionRegistry
             ->filter(function (OperationDefinitionNode $node): bool {
                 return $node->operation === 'subscription';
             })
-            ->flatMap(function (OperationDefinitionNode $node) {
+            ->flatMap(function (OperationDefinitionNode $node): array {
                 return (new Collection($node->selectionSet->selections))
                     ->map(function (FieldNode $field): string {
                         return $field->name->value;
                     })
-                    ->toArray();
+                    ->all();
             })
             ->map(function ($subscriptionField): GraphQLSubscription {
                 return Arr::get(

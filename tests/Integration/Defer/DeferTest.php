@@ -6,6 +6,7 @@ use Tests\TestCase;
 use GraphQL\Error\Error;
 use Illuminate\Support\Arr;
 use Nuwave\Lighthouse\Defer\Defer;
+use Nuwave\Lighthouse\Defer\DeferrableDirective;
 use Nuwave\Lighthouse\Defer\DeferServiceProvider;
 
 class DeferTest extends TestCase
@@ -35,6 +36,31 @@ class DeferTest extends TestCase
     /**
      * @test
      */
+    public function itAddsTheDeferClientDirective(): void
+    {
+        $this->schema = $this->placeholderQuery();
+
+        $introspection = $this->graphQL('
+          query IntrospectionQuery {
+            __schema {
+              directives {
+                name
+              }
+            }
+          }
+        ');
+
+        $this->assertTrue(
+            in_array(
+                'defer',
+                $introspection->jsonGet('data.__schema.directives.*.name')
+            )
+        );
+    }
+
+    /**
+     * @test
+     */
     public function itCanDeferFields(): void
     {
         self::$data = [
@@ -44,7 +70,6 @@ class DeferTest extends TestCase
             ],
         ];
 
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type User {
             name: String!
@@ -52,7 +77,7 @@ class DeferTest extends TestCase
         }
 
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
@@ -104,7 +129,6 @@ class DeferTest extends TestCase
             ],
         ];
 
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type User {
             name: String!
@@ -112,7 +136,7 @@ class DeferTest extends TestCase
         }
 
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
@@ -149,6 +173,69 @@ class DeferTest extends TestCase
     /**
      * @test
      */
+    public function itCanDeferNestedFieldsOnMutations(): void
+    {
+        self::$data = [
+            'name' => 'John Doe',
+            'parent' => [
+                'name' => 'Jane Doe',
+            ],
+        ];
+
+        $this->schema = "
+        type User {
+            name: String!
+            parent: User
+        }
+        
+        type Query {
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
+        }
+        
+        type Mutation {
+            updateUser(name: String!): User
+                @field(resolver: \"{$this->qualifyTestResolver()}\")
+        }
+        ";
+
+        $chunks = $this->getStreamedChunks('
+        mutation { 
+            updateUser(
+                name: "Foo"
+            ) {
+                name
+                parent @defer {
+                    name
+                }
+            }
+        }
+        ');
+
+        $this->assertSame(
+            [
+                [
+                    'data' => [
+                        'updateUser' => [
+                            'name' => 'John Doe',
+                            'parent' => null,
+                        ],
+                    ],
+                ],
+                [
+                    'updateUser.parent' => [
+                        'data' => [
+                            'name' => 'Jane Doe',
+                        ],
+                    ],
+                ],
+            ],
+            $chunks
+        );
+    }
+
+    /**
+     * @test
+     */
     public function itCanDeferListFields(): void
     {
         self::$data = [
@@ -166,7 +253,6 @@ class DeferTest extends TestCase
             ],
         ];
 
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type Post {
             title: String
@@ -178,7 +264,7 @@ class DeferTest extends TestCase
         }
         
         type Query {
-            posts: [Post] @field(resolver: \"{$resolver}\")
+            posts: [Post] @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
@@ -231,7 +317,6 @@ class DeferTest extends TestCase
             ],
         ];
 
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type Comment {
             message: String
@@ -248,7 +333,7 @@ class DeferTest extends TestCase
         }
         
         type Query {
-            posts: [Post] @field(resolver: \"{$resolver}\")
+            posts: [Post] @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
@@ -291,7 +376,6 @@ class DeferTest extends TestCase
      */
     public function itCancelsDefermentAfterMaxExecutionTime(): void
     {
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type User {
             name: String!
@@ -299,7 +383,7 @@ class DeferTest extends TestCase
         }
 
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
@@ -350,7 +434,6 @@ class DeferTest extends TestCase
      */
     public function itCancelsDefermentAfterMaxNestedFields(): void
     {
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type User {
             name: String!
@@ -358,7 +441,7 @@ class DeferTest extends TestCase
         }
 
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
@@ -407,11 +490,6 @@ class DeferTest extends TestCase
      */
     public function itThrowsExceptionOnNunNullableFields(): void
     {
-        config([
-            'lighthouse.defer.max_nested_fields' => 1,
-            'app.debug' => false,
-        ]);
-
         self::$data = [
             'name' => 'John Doe',
             'parent' => [
@@ -419,7 +497,6 @@ class DeferTest extends TestCase
             ],
         ];
 
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type User {
             name: String!
@@ -427,11 +504,11 @@ class DeferTest extends TestCase
         }
 
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
-        $this->query('
+        $this->graphQL('
         { 
             user {
                 name
@@ -443,7 +520,7 @@ class DeferTest extends TestCase
         ')->assertJson([
             'errors' => [
                 [
-                    'message' => 'The @defer directive cannot be placed on a Non-Nullable field.',
+                    'message' => DeferrableDirective::THE_DEFER_DIRECTIVE_CANNOT_BE_USED_ON_A_NON_NULLABLE_FIELD,
                 ],
             ],
         ]);
@@ -452,7 +529,7 @@ class DeferTest extends TestCase
     /**
      * @test
      */
-    public function itSkipsDeferWithIncludeAndSkipDirectives(): void
+    public function itDoesNotDeferWithIncludeAndSkipDirectives(): void
     {
         self::$data = [
             'name' => 'John Doe',
@@ -464,7 +541,6 @@ class DeferTest extends TestCase
             ],
         ];
 
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         directive @include(if: Boolean!) on FIELD
         directive @skip(if: Boolean!) on FIELD
@@ -475,29 +551,32 @@ class DeferTest extends TestCase
         }
 
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
-        $this->query('
+        $this->graphQL('
         { 
-            user {
+            userInclude: user {
                 name
-                parent @defer @include(if: true) {
+                parent @defer @include(if: false) {
                     name
-                    parent @defer @skip(if: true) {
-                        name
-                    }
+                }
+            }
+            userSkip: user {
+                name
+                parent @defer @skip(if: true) {
+                    name
                 }
             }
         }
-        ')->assertJson([
+        ')->assertExactJson([
             'data' => [
-                'user' => [
+                'userInclude' => [
                     'name' => 'John Doe',
-                    'parent' => [
-                        'name' => 'Jane Doe',
-                    ],
+                ],
+                'userSkip' => [
+                    'name' => 'John Doe',
                 ],
             ],
         ]);
@@ -515,7 +594,6 @@ class DeferTest extends TestCase
             ],
         ];
 
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type User {
             name: String!
@@ -523,11 +601,11 @@ class DeferTest extends TestCase
         }
 
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
-        $this->query('
+        $this->graphQL('
         fragment UserWithParent on User {
             name
             parent {
@@ -551,23 +629,13 @@ class DeferTest extends TestCase
 
     /**
      * @test
-     *
-     * @todo Ensure that this functions the same way as Apollo Server.
-     * Currently in the documentation it just says "Not Supported" instead
-     * of specifying if it throws an error or not.
-     *
-     * https://www.apollographql.com/docs/react/features/defer-support.html#defer-usage
      */
-    public function itSkipsDeferredFieldsOnMutations(): void
+    public function itThrowsIfTryingToDeferRootMutationFields(): void
     {
         self::$data = [
             'name' => 'John Doe',
-            'parent' => [
-                'name' => 'Jane Doe',
-            ],
         ];
 
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type User {
             name: String!
@@ -575,27 +643,26 @@ class DeferTest extends TestCase
         }
         
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         
         type Mutation {
             updateUser(name: String!): User
-                @field(resolver: \"{$resolver}\")
+                @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
-        $this->query('
+        $this->graphQL('
         mutation UpdateUser {
-            updateUser(name: "John Doe") {
+            updateUser(name: "John Doe") @defer {
                 name 
-                parent @defer {
-                    name
-                }
             }
         }
         ')->assertJson([
-            'data' => [
-                'updateUser' => self::$data,
+            'errors' => [
+                [
+                    'message' => DeferrableDirective::THE_DEFER_DIRECTIVE_CANNOT_BE_USED_ON_A_ROOT_MUTATION_FIELD,
+                ],
             ],
         ]);
     }
@@ -612,7 +679,6 @@ class DeferTest extends TestCase
             ],
         ];
 
-        $resolver = addslashes(self::class).'@resolve';
         $this->schema = "
         type User {
             name: String!
@@ -620,11 +686,11 @@ class DeferTest extends TestCase
         }
         
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 
-        $this->query('
+        $this->graphQL('
         {
             user {
                 name
@@ -652,16 +718,14 @@ class DeferTest extends TestCase
             ],
         ];
 
-        $resolver = addslashes(self::class).'@resolve';
-        $throw = addslashes(self::class).'@throw';
         $this->schema = "
         type User {
             name: String!
-            parent: User @field(resolver: \"{$throw}\")
+            parent: User @field(resolver: \"{$this->qualifyTestResolver('throw')}\")
         }
         
         type Query {
-            user: User @field(resolver: \"{$resolver}\")
+            user: User @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         ";
 

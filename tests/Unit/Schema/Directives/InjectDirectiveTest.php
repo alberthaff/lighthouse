@@ -23,11 +23,11 @@ class InjectDirectiveTest extends DBTestCase
         type Query {
             me: User!
                 @inject(context: "user.id", name: "user_id")
-                @field(resolver: "'.addslashes(self::class).'@resolveUser")
+                @field(resolver: "'.$this->qualifyTestResolver('resolveUser').'")
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             me {
                 id

@@ -8,24 +8,10 @@ use GraphQL\Language\AST\Node;
 use Illuminate\Support\Collection;
 use GraphQL\Language\AST\DirectiveNode;
 use Illuminate\Contracts\Events\Dispatcher;
-use GraphQL\Language\AST\TypeDefinitionNode;
-use GraphQL\Language\AST\FieldDefinitionNode;
-use GraphQL\Language\AST\InputValueDefinitionNode;
 use Nuwave\Lighthouse\Support\Contracts\Directive;
 use Nuwave\Lighthouse\Exceptions\DirectiveException;
-use Nuwave\Lighthouse\Support\Contracts\ArgDirective;
-use Nuwave\Lighthouse\Support\Contracts\NodeResolver;
 use Nuwave\Lighthouse\Schema\Directives\BaseDirective;
-use Nuwave\Lighthouse\Support\Contracts\FieldResolver;
-use Nuwave\Lighthouse\Support\Contracts\ArgManipulator;
-use Nuwave\Lighthouse\Support\Contracts\NodeMiddleware;
-use Nuwave\Lighthouse\Support\Contracts\FieldMiddleware;
-use Nuwave\Lighthouse\Support\Contracts\NodeManipulator;
 use Nuwave\Lighthouse\Events\RegisterDirectiveNamespaces;
-use Nuwave\Lighthouse\Support\Contracts\FieldManipulator;
-use Nuwave\Lighthouse\Support\Contracts\ArgBuilderDirective;
-use Nuwave\Lighthouse\Support\Contracts\ArgDirectiveForArray;
-use Nuwave\Lighthouse\Support\Contracts\ArgTransformerDirective;
 
 class DirectiveFactory
 {
@@ -40,7 +26,7 @@ class DirectiveFactory
      *
      * @var string[]
      */
-    protected $resolved = [];
+    protected $resolvedClassnames = [];
 
     /**
      * The paths used for locating directive classes.
@@ -61,26 +47,16 @@ class DirectiveFactory
     public function __construct(Dispatcher $dispatcher)
     {
         // When looking for a directive by name, the namespaces are tried in order
-        $directives = new Collection([
+        $this->directiveBaseNamespaces = (new Collection([
             // User defined directives (top priority)
             config('lighthouse.namespaces.directives'),
 
             // Plugin developers defined directives
             $dispatcher->dispatch(new RegisterDirectiveNamespaces),
-        ]);
 
-        /*
-         * Allow a smooth transition away from the deprecated between directives.
-         * @deprecated
-         */
-        if (config('new_between_directives')) {
-            $directives->push('Nuwave\\Lighthouse\\Between');
-        }
-
-        // Lighthouse defined directives
-        $directives->push('Nuwave\\Lighthouse\\Schema\\Directives');
-
-        $this->directiveBaseNamespaces = $directives
+            // Lighthouse defined directives
+            'Nuwave\\Lighthouse\\Schema\\Directives',
+        ]))
             ->flatten()
             ->filter()
             ->all();
@@ -95,7 +71,8 @@ class DirectiveFactory
      */
     public function create(string $directiveName, $definitionNode = null): Directive
     {
-        $directive = $this->resolve($directiveName) ?? $this->createOrFail($directiveName);
+        $directive = $this->resolve($directiveName)
+            ?? $this->createOrFail($directiveName);
 
         return $definitionNode
             ? $this->hydrate($directive, $definitionNode)
@@ -110,7 +87,7 @@ class DirectiveFactory
      */
     protected function resolve(string $directiveName): ?Directive
     {
-        if ($className = Arr::get($this->resolved, $directiveName)) {
+        if ($className = Arr::get($this->resolvedClassnames, $directiveName)) {
             return app($className);
         }
 
@@ -152,11 +129,11 @@ class DirectiveFactory
     {
         // Bail to respect the priority of namespaces, the first
         // resolved directive is kept
-        if (in_array($directiveName, $this->resolved, true)) {
+        if (in_array($directiveName, $this->resolvedClassnames, true)) {
             return $this;
         }
 
-        $this->resolved[$directiveName] = $className;
+        $this->resolvedClassnames[$directiveName] = $className;
 
         return $this;
     }
@@ -168,7 +145,7 @@ class DirectiveFactory
      */
     public function setResolved(string $directiveName, string $className): self
     {
-        $this->resolved[$directiveName] = $className;
+        $this->resolvedClassnames[$directiveName] = $className;
 
         return $this;
     }
@@ -178,7 +155,7 @@ class DirectiveFactory
      */
     public function clearResolved(): self
     {
-        $this->resolved = [];
+        $this->resolvedClassnames = [];
 
         return $this;
     }
@@ -187,13 +164,13 @@ class DirectiveFactory
      * Set the given definition on the directive.
      *
      * @param  \Nuwave\Lighthouse\Support\Contracts\Directive  $directive
-     * @param  \GraphQL\Language\AST\TypeSystemDefinitionNode  $definitionNode
+     * @param  \GraphQL\Language\AST\Node  $node
      * @return \Nuwave\Lighthouse\Support\Contracts\Directive
      */
-    protected function hydrate(Directive $directive, $definitionNode): Directive
+    protected function hydrate(Directive $directive, Node $node): Directive
     {
         return $directive instanceof BaseDirective
-            ? $directive->hydrate($definitionNode)
+            ? $directive->hydrate($node)
             : $directive;
     }
 
@@ -202,15 +179,15 @@ class DirectiveFactory
      *
      * @param  \GraphQL\Language\AST\Node  $node
      * @param  string  $directiveClass
-     * @return \Illuminate\Support\Collection<$directiveClass>
+     * @return \Illuminate\Support\Collection <$directiveClass>
      */
-    protected function createAssociatedDirectivesOfType(Node $node, string $directiveClass): Collection
+    public function createAssociatedDirectivesOfType(Node $node, string $directiveClass): Collection
     {
         return (new Collection($node->directives))
-            ->map(function (DirectiveNode $directive) use ($node) {
+            ->map(function (DirectiveNode $directive) use ($node): Directive {
                 return $this->create($directive->name->value, $node);
             })
-            ->filter(function (Directive $directive) use ($directiveClass) {
+            ->filter(function (Directive $directive) use ($directiveClass): bool {
                 return $directive instanceof $directiveClass;
             });
     }
@@ -227,7 +204,7 @@ class DirectiveFactory
      *
      * @throws \Nuwave\Lighthouse\Exceptions\DirectiveException
      */
-    protected function createSingleDirectiveOfType(Node $node, string $directiveClass): ?Directive
+    public function createSingleDirectiveOfType(Node $node, string $directiveClass): ?Directive
     {
         $directives = $this->createAssociatedDirectivesOfType($node, $directiveClass);
 
@@ -240,154 +217,5 @@ class DirectiveFactory
         }
 
         return $directives->first();
-    }
-
-    /**
-     * @param  \GraphQL\Language\AST\Node  $node
-     * @return \Illuminate\Support\Collection<\Nuwave\Lighthouse\Support\Contracts\NodeManipulator>
-     */
-    public function createNodeManipulators(Node $node): Collection
-    {
-        return $this->createAssociatedDirectivesOfType($node, NodeManipulator::class);
-    }
-
-    /**
-     * @param  \GraphQL\Language\AST\FieldDefinitionNode  $fieldDefinition
-     * @return \Illuminate\Support\Collection<\Nuwave\Lighthouse\Support\Contracts\FieldManipulator>
-     */
-    public function createFieldManipulators(FieldDefinitionNode $fieldDefinition): Collection
-    {
-        return $this->createAssociatedDirectivesOfType($fieldDefinition, FieldManipulator::class);
-    }
-
-    /**
-     * @param  \GraphQL\Language\AST\InputValueDefinitionNode  $inputValueDefinition
-     * @return \Illuminate\Support\Collection<\Nuwave\Lighthouse\Support\Contracts\ArgManipulator>
-     */
-    public function createArgManipulators(InputValueDefinitionNode $inputValueDefinition): Collection
-    {
-        return $this->createAssociatedDirectivesOfType($inputValueDefinition, ArgManipulator::class);
-    }
-
-    /**
-     * Get the node resolver directive for the given type definition.
-     *
-     * @param  \GraphQL\Language\AST\TypeDefinitionNode  $node
-     * @return \Nuwave\Lighthouse\Support\Contracts\NodeResolver|null
-     */
-    public function createNodeResolver(TypeDefinitionNode $node): ?NodeResolver
-    {
-        /* @noinspection PhpIncompatibleReturnTypeInspection */
-        return $this->createSingleDirectiveOfType($node, NodeResolver::class);
-    }
-
-    /**
-     * Check if the given node has a type resolver directive handler assigned to it.
-     *
-     * @param  \GraphQL\Language\AST\TypeDefinitionNode  $typeDefinition
-     * @return bool
-     */
-    public function hasNodeResolver(TypeDefinitionNode $typeDefinition): bool
-    {
-        return $this->createNodeResolver($typeDefinition) instanceof NodeResolver;
-    }
-
-    /**
-     * Check if the given field has a field resolver directive handler assigned to it.
-     *
-     * @param  \GraphQL\Language\AST\FieldDefinitionNode  $fieldDefinition
-     * @return bool
-     */
-    public function hasFieldResolver(FieldDefinitionNode $fieldDefinition): bool
-    {
-        return $this->createFieldResolver($fieldDefinition) instanceof FieldResolver;
-    }
-
-    /**
-     * Check if field has one or more FieldMiddleware directives associated with it.
-     *
-     * @param  \GraphQL\Language\AST\FieldDefinitionNode  $field
-     * @return bool
-     */
-    public function hasFieldMiddleware(FieldDefinitionNode $field): bool
-    {
-        return $this->createFieldMiddleware($field)->count() > 1;
-    }
-
-    /**
-     * Get handler for field.
-     *
-     * @param  \GraphQL\Language\AST\FieldDefinitionNode  $field
-     * @return \Nuwave\Lighthouse\Support\Contracts\FieldResolver|null
-     */
-    public function createFieldResolver(FieldDefinitionNode $field): ?FieldResolver
-    {
-        return $this->createSingleDirectiveOfType($field, FieldResolver::class);
-    }
-
-    /**
-     * Get all middleware directive for a type definitions.
-     *
-     * @param  \GraphQL\Language\AST\Node  $typeDefinition
-     * @return \Illuminate\Support\Collection<\Nuwave\Lighthouse\Support\Contracts\NodeMiddleware>
-     */
-    public function createNodeMiddleware(Node $typeDefinition): Collection
-    {
-        return $this->createAssociatedDirectivesOfType($typeDefinition, NodeMiddleware::class);
-    }
-
-    /**
-     * Get middleware for field.
-     *
-     * @param  \GraphQL\Language\AST\FieldDefinitionNode  $fieldDefinition
-     * @return \Illuminate\Support\Collection<\Nuwave\Lighthouse\Support\Contracts\FieldMiddleware>
-     */
-    public function createFieldMiddleware($fieldDefinition): Collection
-    {
-        return $this->createAssociatedDirectivesOfType($fieldDefinition, FieldMiddleware::class);
-    }
-
-    /**
-     * Create `ArgTransformerDirective` instances from `InputValueDefinitionNode`.
-     *
-     * @param  \GraphQL\Language\AST\InputValueDefinitionNode  $arg
-     * @return \Illuminate\Support\Collection<\Nuwave\Lighthouse\Support\Contracts\ArgTransformerDirective>
-     */
-    public function createArgTransformers(InputValueDefinitionNode $arg): Collection
-    {
-        return $this->createAssociatedDirectivesOfType($arg, ArgTransformerDirective::class);
-    }
-
-    /**
-     * Create `ArgDirective` instances from `InputValueDefinitionNode`.
-     *
-     * @param  \GraphQL\Language\AST\InputValueDefinitionNode  $arg
-     * @return \Illuminate\Support\Collection<\Nuwave\Lighthouse\Support\Contracts\ArgDirective>
-     */
-    public function createArgDirectives(InputValueDefinitionNode $arg): Collection
-    {
-        return $this->createAssociatedDirectivesOfType($arg, ArgDirective::class);
-    }
-
-    /**
-     * Get middleware for array arguments.
-     *
-     * @param  \GraphQL\Language\AST\InputValueDefinitionNode  $arg
-     * @return \Illuminate\Support\Collection<\Nuwave\Lighthouse\Support\Contracts\ArgDirectiveForArray>
-     */
-    public function createArgDirectivesForArray(InputValueDefinitionNode $arg): Collection
-    {
-        return $this->createAssociatedDirectivesOfType($arg, ArgDirectiveForArray::class);
-    }
-
-    /**
-     * Get query builders for arguments.
-     *
-     * @param  \GraphQL\Language\AST\InputValueDefinitionNode  $arg
-     * @return \Illuminate\Support\Collection<\Nuwave\Lighthouse\Support\Contracts\ArgBuilderDirective>
-     */
-    public function createArgBuilderDirective(InputValueDefinitionNode $arg): Collection
-    {
-        return $this->createAssociatedDirectivesOfType($arg, ArgBuilderDirective::class);
     }
 }

@@ -74,18 +74,26 @@ class Defer implements CreatesResponse
     /**
      * Set the tracing directive on all fields of the query to enable tracing them.
      *
-     * @param  \Nuwave\Lighthouse\Events\ManipulateAST  $ManipulateAST
+     * @param  \Nuwave\Lighthouse\Events\ManipulateAST  $manipulateAST
      * @return void
      */
-    public function handleManipulateAST(ManipulateAST $ManipulateAST): void
+    public function handleManipulateAST(ManipulateAST $manipulateAST): void
     {
-        $ManipulateAST->documentAST = ASTHelper::attachDirectiveToObjectTypeFields(
-            $ManipulateAST->documentAST,
+        ASTHelper::attachDirectiveToObjectTypeFields(
+            $manipulateAST->documentAST,
             PartialParser::directive('@deferrable')
         );
 
-        $ManipulateAST->documentAST->setDefinition(
-            PartialParser::directiveDefinition('directive @defer(if: Boolean) on FIELD')
+        $manipulateAST->documentAST->setDirectiveDefinition(
+            PartialParser::directiveDefinition('
+"""
+Use this directive on expensive or slow fields to resolve them asynchronously.
+Must not be placed upon:
+- Non-Nullable fields
+- Mutation root fields
+"""
+directive @defer(if: Boolean = true) on FIELD
+')
         );
     }
 
@@ -199,8 +207,7 @@ class Defer implements CreatesResponse
                     $this->maxExecutionTime = microtime(true) + ($executionTime * 1000);
                 }
 
-                // TODO: Allow nested_levels to be set in config
-                // to break out of loop early.
+                // TODO: Allow nested_levels to be set in config to break out of loop early.
                 while (
                     count($this->deferred)
                     && ! $this->executionTimeExpired()

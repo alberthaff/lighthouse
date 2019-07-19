@@ -48,7 +48,7 @@ class NodeInterfaceTest extends DBTestCase
         $firstGlobalId = $this->globalIdResolver->encode('User', $this->testTuples[1]['id']);
         $secondGlobalId = $this->globalIdResolver->encode('User', $this->testTuples[2]['id']);
 
-        $this->query('
+        $this->graphQL('
         {
             first: node(id: "'.$firstGlobalId.'") {
                 id
@@ -97,12 +97,12 @@ class NodeInterfaceTest extends DBTestCase
         }
         '.$this->placeholderQuery();
 
-        $user = factory(User::class)->create(
-            ['name' => 'Sepp']
-        );
+        $user = factory(User::class)->create([
+            'name' => 'Sepp',
+        ]);
         $globalId = $this->globalIdResolver->encode('User', $user->getKey());
 
-        $this->query('
+        $this->graphQL('
         {
             node(id: "'.$globalId.'") {
                 id

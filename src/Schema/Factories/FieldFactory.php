@@ -9,25 +9,25 @@ use GraphQL\Type\Definition\InputType;
 use GraphQL\Type\Definition\ListOfType;
 use Nuwave\Lighthouse\Support\Pipeline;
 use Nuwave\Lighthouse\Execution\Builder;
-use Nuwave\Lighthouse\Schema\AST\ASTHelper;
 use GraphQL\Type\Definition\InputObjectType;
 use Nuwave\Lighthouse\Execution\ErrorBuffer;
-use Nuwave\Lighthouse\Execution\QueryFilter;
 use Nuwave\Lighthouse\Schema\Values\FieldValue;
 use GraphQL\Language\AST\InputValueDefinitionNode;
 use Nuwave\Lighthouse\Schema\Values\ArgumentValue;
 use Nuwave\Lighthouse\Support\Contracts\Directive;
 use Nuwave\Lighthouse\Support\Contracts\ArgDirective;
+use Nuwave\Lighthouse\Support\Contracts\FieldResolver;
+use Nuwave\Lighthouse\Support\Contracts\ProvidesRules;
 use Nuwave\Lighthouse\Support\Contracts\HasErrorBuffer;
 use Nuwave\Lighthouse\Schema\Directives\SpreadDirective;
+use Nuwave\Lighthouse\Support\Contracts\FieldMiddleware;
 use Nuwave\Lighthouse\Support\Contracts\HasArgumentPath;
 use Nuwave\Lighthouse\Support\Contracts\ProvidesResolver;
 use Nuwave\Lighthouse\Support\Traits\HasResolverArguments;
-use Nuwave\Lighthouse\Support\Contracts\ArgFilterDirective;
 use Nuwave\Lighthouse\Support\Contracts\ArgBuilderDirective;
 use Nuwave\Lighthouse\Support\Contracts\ArgDirectiveForArray;
-use Nuwave\Lighthouse\Support\Contracts\ArgValidationDirective;
 use Nuwave\Lighthouse\Support\Contracts\ArgTransformerDirective;
+use Illuminate\Contracts\Validation\Factory as ValidationFactory;
 use Nuwave\Lighthouse\Support\Contracts\ProvidesSubscriptionResolver;
 
 class FieldFactory
@@ -60,6 +60,11 @@ class FieldFactory
     protected $providesSubscriptionResolver;
 
     /**
+     * @var \Illuminate\Contracts\Validation\Factory
+     */
+    protected $validationFactory;
+
+    /**
      * @var \Nuwave\Lighthouse\Schema\Values\FieldValue
      */
     protected $fieldValue;
@@ -68,12 +73,6 @@ class FieldFactory
      * @var \Nuwave\Lighthouse\Execution\Builder
      */
     protected $builder;
-
-    /**
-     * @var \Nuwave\Lighthouse\Execution\QueryFilter
-     * @deprecated
-     */
-    protected $queryFilter;
 
     /**
      * @var array
@@ -105,7 +104,7 @@ class FieldFactory
      *
      * @var array[]
      */
-    protected $spreadPaths = [];
+    protected $pathsToSpread = [];
 
     /**
      * @param  \Nuwave\Lighthouse\Schema\Factories\DirectiveFactory  $directiveFactory
@@ -113,6 +112,7 @@ class FieldFactory
      * @param  \Nuwave\Lighthouse\Support\Pipeline  $pipeline
      * @param  \Nuwave\Lighthouse\Support\Contracts\ProvidesResolver  $providesResolver
      * @param  \Nuwave\Lighthouse\Support\Contracts\ProvidesSubscriptionResolver  $providesSubscriptionResolver
+     * @param  \Illuminate\Contracts\Validation\Factory  $validationFactory
      * @return void
      */
     public function __construct(
@@ -120,13 +120,15 @@ class FieldFactory
         ArgumentFactory $argumentFactory,
         Pipeline $pipeline,
         ProvidesResolver $providesResolver,
-        ProvidesSubscriptionResolver $providesSubscriptionResolver
+        ProvidesSubscriptionResolver $providesSubscriptionResolver,
+        ValidationFactory $validationFactory
     ) {
         $this->directiveFactory = $directiveFactory;
         $this->argumentFactory = $argumentFactory;
         $this->pipeline = $pipeline;
         $this->providesResolver = $providesResolver;
         $this->providesSubscriptionResolver = $providesSubscriptionResolver;
+        $this->validationFactory = $validationFactory;
     }
 
     /**
@@ -140,7 +142,7 @@ class FieldFactory
         $fieldDefinitionNode = $fieldValue->getField();
 
         // Directives have the first priority for defining a resolver for a field
-        if ($resolverDirective = $this->directiveFactory->createFieldResolver($fieldDefinitionNode)) {
+        if ($resolverDirective = $this->directiveFactory->createSingleDirectiveOfType($fieldDefinitionNode, FieldResolver::class)) {
             $this->fieldValue = $resolverDirective->resolveField($fieldValue);
         } else {
             $this->fieldValue = $fieldValue->setResolver(
@@ -150,10 +152,15 @@ class FieldFactory
             );
         }
 
+        $fieldMiddleware = $this->passResolverArguments(
+            $this->directiveFactory->createAssociatedDirectivesOfType($fieldDefinitionNode, FieldMiddleware::class)
+        );
+        $this->validationErrorBuffer = (new ErrorBuffer)->setErrorType('validation');
+
         $resolverWithMiddleware = $this->pipeline
             ->send($this->fieldValue)
             ->through(
-                $this->directiveFactory->createFieldMiddleware($fieldDefinitionNode)
+                $fieldMiddleware
             )
             ->via('handleField')
             ->then(
@@ -169,10 +176,7 @@ class FieldFactory
             function () use ($argumentValues, $resolverWithMiddleware) {
                 $this->setResolverArguments(...func_get_args());
 
-                $this->validationErrorBuffer = app(ErrorBuffer::class)->setErrorType('validation');
-                $this->builder = new Builder();
-
-                $this->queryFilter = QueryFilter::getInstance($this->fieldValue);
+                $this->builder = new Builder;
 
                 $argumentValues->each(
                     function (ArgumentValue $argumentValue): void {
@@ -188,10 +192,19 @@ class FieldFactory
 
                 // Apply the argument spreadings after we are finished with all
                 // the other argument handling
-                foreach ($this->spreadPaths as $argumentPath) {
+                foreach ($this->pathsToSpread as $argumentPath) {
                     $inputValues = $this->argValue($argumentPath);
+
+                    // If no input is given, there is nothing to spread
+                    if (! $inputValues) {
+                        continue;
+                    }
+
+                    // We remove the value from where it was defined before
                     $this->unsetArgValue($argumentPath);
 
+                    // The last part of the path is the name of the input value,
+                    // the exact thing we want to remove
                     array_pop($argumentPath);
 
                     foreach ($inputValues as $key => $value) {
@@ -202,14 +215,27 @@ class FieldFactory
                     }
                 }
 
-                $this->builder->setQueryFilter(
-                    $this->queryFilter
-                );
-
                 // The final resolver can access the builder through the ResolveInfo
                 $this->resolveInfo->builder = $this->builder;
 
-                return $resolverWithMiddleware($this->root, $this->args, $this->context, $this->resolveInfo);
+                $result = null;
+                try {
+                    $result = $resolverWithMiddleware($this->root, $this->args, $this->context, $this->resolveInfo);
+                } catch (\Illuminate\Validation\ValidationException $validationException) {
+                    $this->addValidationErrorsToBuffer(
+                        $validationException->errors()
+                    );
+                }
+
+                $path = implode(
+                    '.',
+                    $this->resolveInfo()->path
+                );
+                $this->validationErrorBuffer->flush(
+                    "Validation failed for the field [$path]."
+                );
+
+                return $result;
             }
         );
 
@@ -262,7 +288,9 @@ class FieldFactory
             return;
         }
 
-        $directives = $this->directiveFactory->createArgDirectives($astNode);
+        $directives = $this->passResolverArguments(
+            $this->directiveFactory->createAssociatedDirectivesOfType($astNode, ArgDirective::class)
+        );
 
         if (
             $directives->contains(function (Directive $directive): bool {
@@ -270,7 +298,7 @@ class FieldFactory
             })
             && $type instanceof InputObjectType
         ) {
-            $this->spreadPaths [] = $argumentPath;
+            $this->pathsToSpread [] = $argumentPath;
         }
 
         // Handle the argument itself. At this point, it can be wrapped
@@ -335,7 +363,7 @@ class FieldFactory
      * @param  \GraphQL\Language\AST\InputValueDefinitionNode  $astNode
      * @param  mixed[]  $argumentPath
      * @param  \Illuminate\Support\Collection  $directives
-     * @return mixed
+     * @return void
      */
     protected function handleArgDirectives(
         InputValueDefinitionNode $astNode,
@@ -361,10 +389,10 @@ class FieldFactory
             // Pause the iteration once we hit any directive that has to do
             // with validation. We will resume running through the remaining
             // directives later, after we completed validation
-            if ($directive instanceof ArgValidationDirective) {
+            if ($directive instanceof ProvidesRules) {
                 // We gather the rules from all arguments and then run validation in one full swoop
-                $this->rules = array_merge($this->rules, $directive->getRules());
-                $this->messages = array_merge($this->messages, $directive->getMessages());
+                $this->rules = array_merge($this->rules, $directive->rules());
+                $this->messages = array_merge($this->messages, $directive->messages());
 
                 break;
             }
@@ -382,18 +410,6 @@ class FieldFactory
                     $directive
                 );
             }
-
-            if ($directive instanceof ArgFilterDirective) {
-                $argumentName = $astNode->name->value;
-                $directiveDefinition = ASTHelper::directiveDefinition($astNode, $directive->name());
-                $columnName = ASTHelper::directiveArgValue($directiveDefinition, 'key', $argumentName);
-
-                $this->queryFilter->addArgumentFilter(
-                    $argumentName,
-                    $columnName,
-                    $directive
-                );
-            }
         }
 
         // If directives remain, snapshot the state that we are in now
@@ -403,17 +419,17 @@ class FieldFactory
         }
     }
 
-    protected function argValueExists(array $argumentPath)
+    protected function argValueExists(array $argumentPath): bool
     {
         return Arr::has($this->args, implode('.', $argumentPath));
     }
 
-    protected function setArgValue(array $argumentPath, $value)
+    protected function setArgValue(array $argumentPath, $value): array
     {
         return Arr::set($this->args, implode('.', $argumentPath), $value);
     }
 
-    protected function unsetArgValue(array $argumentPath)
+    protected function unsetArgValue(array $argumentPath): void
     {
         Arr::forget($this->args, implode('.', $argumentPath));
     }
@@ -440,33 +456,24 @@ class FieldFactory
             return;
         }
 
-        $validator = validator(
+        /** @var \Nuwave\Lighthouse\Execution\GraphQLValidator $validator */
+        $validator = $this->validationFactory->make(
             $this->args,
             $this->rules,
             $this->messages,
+            // The presence of those custom attributes ensures we get a GraphQLValidator
             [
                 'root' => $this->root,
                 'context' => $this->context,
-                // This makes it so that we get an instance of our own Validator class
                 'resolveInfo' => $this->resolveInfo,
             ]
         );
 
         if ($validator->fails()) {
-            foreach ($validator->errors()->getMessages() as $key => $errorMessages) {
-                foreach ($errorMessages as $errorMessage) {
-                    $this->validationErrorBuffer->push($errorMessage, $key);
-                }
-            }
+            $this->addValidationErrorsToBuffer(
+                $validator->errors()->getMessages()
+            );
         }
-
-        $path = implode(
-            '.',
-            $this->resolveInfo()->path
-        );
-        $this->validationErrorBuffer->flush(
-            "Validation failed for the field [$path]."
-        );
 
         // reset rules and messages
         $this->rules = [];
@@ -509,5 +516,14 @@ class FieldFactory
                 ];
             })
             ->all();
+    }
+
+    protected function addValidationErrorsToBuffer(array $validationErrors): void
+    {
+        foreach ($validationErrors as $key => $errorMessages) {
+            foreach ($errorMessages as $errorMessage) {
+                $this->validationErrorBuffer->push($errorMessage, $key);
+            }
+        }
     }
 }

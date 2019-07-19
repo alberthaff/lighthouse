@@ -5,12 +5,141 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/nuwave/lighthouse/compare/v3.4.0...master)
+## [Unreleased](https://github.com/nuwave/lighthouse/compare/v3.7.0...master)
+
+### Added
+
+- Add the `@namespace` directive as a replacement for the removed `@group` directive https://github.com/nuwave/lighthouse/pull/768
+- The `@defer` extension now supports deferring nested fields of mutations https://github.com/nuwave/lighthouse/pull/855
+- Add a simple way to define complex validation directives by extending `\Nuwave\Lighthouse\Schema\Directives\ValidationDirective` https://github.com/nuwave/lighthouse/pull/846
+
+### Fixed
+
+- Avoid growing the memory extensively when doing complex AST manipulation https://github.com/nuwave/lighthouse/pull/768
+- Make nested mutations work with subclassed relationship types https://github.com/nuwave/lighthouse/pull/825
+- Allow empty arrays and other falsy values as input for nested mutation operations like "sync" https://github.com/nuwave/lighthouse/pull/830
+- Use `Illuminate\Contracts\Config\Repository` instead of `Illuminate\Config\Repository` https://github.com/nuwave/lighthouse/issues/832
+- Allow checking the abilities with `@can` when issuing mass updates on multiple models https://github.com/nuwave/lighthouse/pull/838
+- Allow use of `private` in `@cache` directive even when the user is not authenticated https://github.com/nuwave/lighthouse/pull/843
+- Fix Lumen route registration https://github.com/nuwave/lighthouse/pull/853
+- Fix handling of `@include` directive, it is semantically opposite to `@skip`, when using it with `@defer` https://github.com/nuwave/lighthouse/pull/855
+
+### Changed
+
+- Bumped the requirement on `webonyx/graphql-php` to `^0.13.2` https://github.com/nuwave/lighthouse/pull/768
+- Rename directive interfaces dealing with types from `Node*` to `Type*` https://github.com/nuwave/lighthouse/pull/768
+- Change the signature of the AST manipulating directive interfaces: `TypeManipulator`, `FieldManipulator` and `ArgManipulator` https://github.com/nuwave/lighthouse/pull/768
+- Change the API of the `DocumentAST` class to enable a more performant implementation https://github.com/nuwave/lighthouse/pull/768
+- Enable the schema caching option `lighthouse.cache.enable` by default https://github.com/nuwave/lighthouse/pull/768 
+- Lazily load types from the schema. Directives defined on parts of the schema that are not used within the current
+  query are no longer run on every request https://github.com/nuwave/lighthouse/pull/768
+- Simplify the default route configuration.
+  Make sure to review your `config/lighthouse.php` and bring it up to date
+  with the latest changes in the base configuration file https://github.com/nuwave/lighthouse/pull/820
+- Move `SubscriptionExceptionHandler` into namespace `Nuwave\Lighthouse\Subscriptions\Contracts` https://github.com/nuwave/lighthouse/pull/819
+- The pagination field argument that controls the amount of results
+  now default tos `first` instead of `count`. The config `pagination_amount_argument`
+  can be used to change the argument name https://github.com/nuwave/lighthouse/pull/852
+- Rename `ArgValidationDirective` to `ProvidesRules` and drop `get` prefix from the methods within https://github.com/nuwave/lighthouse/pull/846
+- Make the argument used for finding a model to check @can against configurable.
+  The previous behaviour of implicitely using the `id` argument for finding a specific
+  model to authorize against now no longer works. https://github.com/nuwave/lighthouse/pull/856
+
+### Removed
+
+- Remove `@group` directive in favour of `@middleware` and `@namespace` https://github.com/nuwave/lighthouse/pull/768
+- Remove the `ArgFilterDirective` interface in favour of the `ArgBuilderDirective` interface https://github.com/nuwave/lighthouse/pull/821
+- Remove the old style `@whereBetween` and `@whereNotBetween` directives https://github.com/nuwave/lighthouse/pull/821
+- Use the `@spread` directive instead of the `flatten` argument of `@create`/`@update` https://github.com/nuwave/lighthouse/pull/822
+- Remove `dispatch` aliases `fire` and `class` for dispatching through `@event` https://github.com/nuwave/lighthouse/pull/823
+- Remove the `GraphQL` facade and the container alias `graphql` https://github.com/nuwave/lighthouse/pull/824
+- Remove the alias `if` for specifying the `ability` that has to be met in `@can` https://github.com/nuwave/lighthouse/pull/838
+
+### Deprecated
+
+- The configuration option `pagination_amount_argument` will be removed in v5
+
+## [3.7.0](https://github.com/nuwave/lighthouse/compare/v3.6.1...v3.7.0)
+
+### Added
+
+- Add compatibility layer to allow `@middleware` to support Lumen https://github.com/nuwave/lighthouse/pull/786
+- Add option `decode` to `@globaldId` to control the result of decoding https://github.com/nuwave/lighthouse/pull/796
+- Add config option `cache.ttl` for customizing expiration time of schema cache https://github.com/nuwave/lighthouse/pull/801
+- Extract test helpers into a reusable trait `\Nuwave\Lighthouse\Testing\MakesGraphQLRequests` https://github.com/nuwave/lighthouse/pull/802
+- Support custom rule classes in `@rules` and `@rulesForArray` https://github.com/nuwave/lighthouse/pull/812
+
+### Fixed
+
+- Fix querying for falsy values through `@whereConstraints` https://github.com/nuwave/lighthouse/pull/800
+- Use `Illuminate\Contracts\Events\Dispatcher` instead of concrete implementation in SubscriptionBroadcaster https://github.com/nuwave/lighthouse/pull/805
+
+### Deprecated
+
+- The `GraphQL` facade and the container alias `graphql` will be removed in v4 
+
+## [3.6.1](https://github.com/nuwave/lighthouse/compare/v3.6.0...v3.6.1)
+
+### Fixed
+
+- Use the spec-compliant default deprecation reason for `@deprecate` directive https://github.com/nuwave/lighthouse/pull/787
+
+## [3.6.0](https://github.com/nuwave/lighthouse/compare/v3.5.3...v3.6.0)
+
+### Added
+
+- Add `@whereConstraints` directive that offers flexible query capabilities to the client https://github.com/nuwave/lighthouse/pull/753
+- Add convenience wrapper for registering Enum types based on [BenSampo/laravel-enum](https://github.com/BenSampo/laravel-enum)
+  https://github.com/nuwave/lighthouse/pull/779
+
+### Deprecated
+
+- The `controller` config option will be removed in v4 https://github.com/nuwave/lighthouse/pull/781
+
+## [3.5.3](https://github.com/nuwave/lighthouse/compare/v3.5.2...v3.5.3)
+
+### Fixed
+
+- Respect the model's connection for database transaction during `@create` and `@update` https://github.com/nuwave/lighthouse/pull/777
+
+## [3.5.2](https://github.com/nuwave/lighthouse/compare/v3.5.1...v3.5.2)
+
+### Fixed
+
+- You can now omit an `input` argument from a query that uses
+  the `@spread` directive without getting an error https://github.com/nuwave/lighthouse/pull/774
+
+### Deprecated
+
+- The class `SubscriptionExceptionHandler` will be moved to the namespace Nuwave\Lighthouse\Subscriptions\Contracts
+
+## [3.5.1](https://github.com/nuwave/lighthouse/compare/v3.5.0...v3.5.1)
+
+### Fixed
+
+- Throw error if pagination amount `<= 0` is requested https://github.com/nuwave/lighthouse/pull/765
+
+## [3.5.0](https://github.com/nuwave/lighthouse/compare/v3.4.0...v3.5.0)
 
 ### Changed
 
 - Default the config to always set the `Accept: application/json` header https://github.com/nuwave/lighthouse/pull/743
-- Declare a single named route which handles POST/GET instead of 2 seperate routes https://github.com/nuwave/lighthouse/pull/738
+- Declare a single named route which handles POST/GET instead of 2 separate routes https://github.com/nuwave/lighthouse/pull/738
+- Apply the nested operations within a nested mutation in a consistent order
+  that makes sense https://github.com/nuwave/lighthouse/pull/754
+
+### Deprecated
+
+- The pagination field argument that controls the amount of results
+  will default to `first` instead of `count` in v4. The config `pagination_amount_argument`
+  can be used to change the argument name now https://github.com/nuwave/lighthouse/pull/752
+
+### Fixed
+
+- Instantiate the `ErrorBuffer` directly, its dependencies
+  can not be resolved through the container https://github.com/nuwave/lighthouse/pull/756
+- Refresh GraphQLRequest singleton between multiple requests to prevent
+  a common error in test execution https://github.com/nuwave/lighthouse/pull/761
 
 ## [3.4.0](https://github.com/nuwave/lighthouse/compare/v3.3.0...v3.4.0) - 2019-04-18
 

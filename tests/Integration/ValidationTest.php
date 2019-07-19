@@ -2,13 +2,15 @@
 
 namespace Tests\Integration;
 
-use Tests\TestCase;
+use Tests\DBTestCase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use Tests\Utils\Models\User;
 use Tests\Utils\Queries\Foo;
 use Illuminate\Foundation\Testing\TestResponse;
+use Tests\Utils\Directives\ComplexValidationDirective;
 
-class ValidationTest extends TestCase
+class ValidationTest extends DBTestCase
 {
     protected $schema = '
     type Query {
@@ -82,7 +84,7 @@ class ValidationTest extends TestCase
      */
     public function itValidatesDifferentPathsIndividually(): void
     {
-        $result = $this->query('
+        $result = $this->graphQL('
         {
             foo(
                 input: [
@@ -118,7 +120,7 @@ class ValidationTest extends TestCase
      */
     public function itValidatesList(): void
     {
-        $result = $this->query('
+        $result = $this->graphQL('
         {
             foo(
                 list: [
@@ -143,7 +145,7 @@ class ValidationTest extends TestCase
      */
     public function itValidatesInputCount(): void
     {
-        $result = $this->query('
+        $result = $this->graphQL('
         {
             foo(
                 stringList: [
@@ -184,7 +186,7 @@ class ValidationTest extends TestCase
      */
     public function itPassesIfNothingRequiredIsMissing(): void
     {
-        $this->query('
+        $this->graphQL('
         {
             foo(required: "foo")
         }
@@ -200,7 +202,7 @@ class ValidationTest extends TestCase
      */
     public function itEvaluatesArgDirectivesInDefinitionOrder(): void
     {
-        $validPasswordResult = $this->query('
+        $validPasswordResult = $this->graphQL('
         {
             password(password: " 1234567 ")
         }
@@ -210,7 +212,7 @@ class ValidationTest extends TestCase
         $this->assertNotSame(' 1234567 ', $password);
         $this->assertTrue(password_verify('1234567', $password));
 
-        $invalidPasswordResult = $this->query('
+        $invalidPasswordResult = $this->graphQL('
         {
             password(password: " 1234 ")
         }
@@ -228,7 +230,7 @@ class ValidationTest extends TestCase
      */
     public function itEvaluatesConditionalValidation(): void
     {
-        $validPasswordResult = $this->query('
+        $validPasswordResult = $this->graphQL('
         {
             password
         }
@@ -236,7 +238,7 @@ class ValidationTest extends TestCase
 
         $this->assertSame('no-password', $validPasswordResult->jsonGet('data.password'));
 
-        $invalidPasswordResult = $this->query('
+        $invalidPasswordResult = $this->graphQL('
         {
             password(id: "foo")
         }
@@ -254,7 +256,7 @@ class ValidationTest extends TestCase
      */
     public function itEvaluatesInputArgValidation(): void
     {
-        $result = $this->query('
+        $result = $this->graphQL('
         {
             password(id: "bar", password: "123456")
         }
@@ -272,7 +274,7 @@ class ValidationTest extends TestCase
      */
     public function itEvaluatesNonNullInputArgValidation(): void
     {
-        $this->query('
+        $this->graphQL('
         {
             email(
                 userId: 1
@@ -288,7 +290,7 @@ class ValidationTest extends TestCase
             ],
         ]);
 
-        $invalidEmailResult = $this->query('
+        $invalidEmailResult = $this->graphQL('
         {
             email(
                 userId: 1
@@ -313,7 +315,7 @@ class ValidationTest extends TestCase
      */
     public function itErrorsIfSomethingRequiredIsMissing(): void
     {
-        $result = $this->query('
+        $result = $this->graphQL('
         {
             foo
         }
@@ -326,6 +328,139 @@ class ValidationTest extends TestCase
         $this->assertValidationKeysSame([
             'required',
         ], $result);
+    }
+
+    /**
+     * @test
+     */
+    public function itSetsArgumentsOnCustomValidationDirective(): void
+    {
+        $this->schema = '
+        type Mutation {
+            updateUser(
+                input: UpdateUserInput
+            ): User
+                @complexValidation
+                @update
+        }
+        
+        input UpdateUserInput {
+            id: ID
+            name: String
+        }
+        
+        type User {
+            id: ID
+            name: String
+        }
+        '.$this->placeholderQuery();
+
+        factory(User::class)->create([
+            'name' => 'foo',
+        ]);
+
+        factory(User::class)->create([
+            'name' => 'bar',
+        ]);
+
+        $duplicateName = $this->graphQL('
+        mutation {
+            updateUser(
+                input: {
+                    id: 1
+                    name: "bar"
+                }
+            ) {
+                id
+            }
+        } 
+        ');
+
+        $this->assertSame(
+            [
+                'input.name' => [
+                    ComplexValidationDirective::UNIQUE_VALIDATION_MESSAGE,
+                ],
+            ],
+            $duplicateName->jsonGet('errors.0.extensions.validation')
+        );
+    }
+
+    /**
+     * @test
+     */
+    public function itCombinesFieldValidationAndArgumentValidation(): void
+    {
+        $this->schema = '
+        type Mutation {
+            createUser(
+                foo: String @rules(apply: ["max:5"])
+            ): User
+                @fooValidation
+                @create
+        }
+        
+        type User {
+            id: ID
+            name: String
+        }
+        '.$this->placeholderQuery();
+
+        $result = $this->graphQL('
+        mutation {
+            createUser(
+                foo: "  ?!?  "
+            ) {
+                id
+            }
+        } 
+        ');
+
+        $this->assertCount(
+            2,
+            $result->jsonGet('errors.0.extensions.validation.foo')
+        );
+    }
+
+    /**
+     * @test
+     */
+    public function itCombinesArgumentValidationByPausingAndResuming(): void
+    {
+        $this->markTestSkipped('
+        This should work once we can reliably depend upon repeatable directives.
+        As of now, the rules of the second @rules directive are not considered
+        and Lighthouse uses those of the first directive.
+        ');
+
+        $this->schema = '
+        type Mutation {
+            createUser(
+                foo: String @rules(apply: ["max:5"]) @trim @rules(apply: ["min:4"])
+            ): User
+                @create
+        }
+        
+        type User {
+            id: ID
+            name: String
+        }
+        '.$this->placeholderQuery();
+
+        $result = $this->graphQL('
+        mutation {
+            createUser(
+                foo: "  ?!?  "
+            ) {
+                id
+            }
+        } 
+        ');
+
+        $this->assertCount(
+            2,
+            $result->jsonGet('errors.0.extensions.validation.foo')
+        );
     }
 
     /**

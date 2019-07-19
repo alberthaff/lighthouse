@@ -65,9 +65,9 @@ class SearchDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
-            posts(count: 10 search: "great") {
+            posts(first: 10 search: "great") {
                 data {
                     id
                     title
@@ -114,7 +114,7 @@ class SearchDirectiveTest extends DBTestCase
         $this->engine->shouldReceive('paginate')
             ->with(
                 Mockery::on(
-                    function ($argument) {
+                    function ($argument): bool {
                         return $argument->index === 'my.index';
                     }
                 ),
@@ -135,9 +135,9 @@ class SearchDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
-            posts(count: 10 search: "great") {
+            posts(first: 10 search: "great") {
                 data {
                     id
                     title
@@ -201,9 +201,9 @@ class SearchDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
-            posts(count: 10 search: "great") {
+            posts(first: 10 search: "great") {
                 data {
                     id
                     title

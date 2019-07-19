@@ -32,21 +32,17 @@ class BuildSchemaStringTest extends TestCase
         app('events')->listen(
             BuildSchemaString::class,
             function (BuildSchemaString $buildSchemaString): string {
-                $resolver = $this->getResolver('resolveSayHello');
-
                 return "
                 extend type Query {
-                    sayHello: String @field(resolver: \"{$resolver}\")
+                    sayHello: String @field(resolver: \"{$this->qualifyTestResolver('resolveSayHello')}\")
                 }
                 ";
             }
         );
 
-        $resolver = $this->getResolver('resolveFoo');
-
         $this->schema = "
         type Query {
-            foo: String @field(resolver: \"{$resolver}\")
+            foo: String @field(resolver: \"{$this->qualifyTestResolver('resolveFoo')}\")
         }
         ";
 
@@ -55,7 +51,7 @@ class BuildSchemaStringTest extends TestCase
             foo
         }
         ';
-        $this->query($queryForBaseSchema)->assertJson([
+        $this->graphQL($queryForBaseSchema)->assertJson([
             'data' => [
                 'foo' => 'foo',
             ],
@@ -66,7 +62,7 @@ class BuildSchemaStringTest extends TestCase
             sayHello
         }
         ';
-        $this->query($queryForAdditionalSchema)->assertJson([
+        $this->graphQL($queryForAdditionalSchema)->assertJson([
             'data' => [
                 'sayHello' => 'hello',
             ],
@@ -81,10 +77,5 @@ class BuildSchemaStringTest extends TestCase
     public function resolveFoo(): string
     {
         return 'foo';
-    }
-
-    protected function getResolver(string $method): string
-    {
-        return addslashes(self::class)."@{$method}";
     }
 }

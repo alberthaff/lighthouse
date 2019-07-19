@@ -3,6 +3,7 @@
 namespace Tests\Integration\Schema\Directives;
 
 use Tests\DBTestCase;
+use GraphQL\Error\Error;
 use Tests\Utils\Models\Post;
 use Tests\Utils\Models\User;
 use Tests\Utils\Models\Comment;
@@ -28,9 +29,9 @@ class PaginateDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
-            users(count: 5) {
+            users(first: 5) {
                 paginatorInfo {
                     count
                     total
@@ -59,6 +60,39 @@ class PaginateDirectiveTest extends DBTestCase
     /**
      * @test
      */
+    public function itHandlesPaginationWithCountZero(): void
+    {
+        $this->schema = '
+        type User {
+            id: ID!
+            name: String!
+        }
+        
+        type Query {
+            users: [User!] @paginate
+        }
+        ';
+
+        $this->graphQL('
+        {
+            users(first: 0) {
+                data {
+                    id
+                }
+            }
+        }
+        ')
+        ->assertJson([
+            'data' => [
+                'users' => null,
+            ],
+        ])
+        ->assertErrorCategory(Error::CATEGORY_GRAPHQL);
+    }
+
+    /**
+     * @test
+     */
     public function itCanSpecifyCustomBuilder(): void
     {
         factory(User::class, 2)->create();
@@ -75,9 +109,9 @@ class PaginateDirectiveTest extends DBTestCase
         ';
 
         // The custom builder is supposed to change the sort order
-        $this->query('
+        $this->graphQL('
         {
-            users(count: 1) {
+            users(first: 1) {
                 data {
                     id
                 }
@@ -135,23 +169,23 @@ class PaginateDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
-            users(count: 3, page: 1) {
+            users(first: 3, page: 1) {
                 paginatorInfo {
                     count
                     total
                     currentPage
                 }
                 data {
-                    posts(count: 2, page: 2) {
+                    posts(first: 2, page: 2) {
                         paginatorInfo {
                             count
                             total
                             currentPage
                         }
                         data {
-                            comments(count: 1, page: 3) {
+                            comments(first: 1, page: 3) {
                                 paginatorInfo {
                                     count
                                     total
@@ -210,7 +244,7 @@ class PaginateDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             users(first: 5) {
                 pageInfo {
@@ -251,7 +285,7 @@ class PaginateDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             users(first: 5) {
                 pageInfo {
@@ -305,9 +339,9 @@ class PaginateDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
-            users(count: 5) {
+            users(first: 5) {
                 paginatorInfo {
                     count
                     currentPage
@@ -354,14 +388,14 @@ class PaginateDirectiveTest extends DBTestCase
             name: String!
         }
 
-        extend type Query @group {
+        extend type Query {
             users: [User!]! @paginate(model: "User")
         }
         '.$this->placeholderQuery();
 
-        $this->query('
+        $this->graphQL('
         {
-            users(count: 1) {
+            users(first: 1) {
                 data {
                     id
                     name
@@ -389,7 +423,7 @@ class PaginateDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             users {
                 paginatorInfo {
@@ -435,9 +469,9 @@ class PaginateDirectiveTest extends DBTestCase
         }
         ';
 
-        $resultFromDefaultPagination = $this->query('
+        $resultFromDefaultPagination = $this->graphQL('
         {
-            users1(count: 10) {
+            users1(first: 10) {
                 data {
                     id
                     name
@@ -451,7 +485,7 @@ class PaginateDirectiveTest extends DBTestCase
             $resultFromDefaultPagination->jsonGet('errors.0.message')
         );
 
-        $resultFromRelayPagination = $this->query('
+        $resultFromRelayPagination = $this->graphQL('
         {
             users2(first: 10) {
                 edges {
@@ -491,9 +525,9 @@ class PaginateDirectiveTest extends DBTestCase
         }
         ';
 
-        $result = $this->query('
+        $result = $this->graphQL('
         {
-            users1(count: 10) {
+            users1(first: 10) {
                 data {
                     id
                     name
@@ -507,9 +541,9 @@ class PaginateDirectiveTest extends DBTestCase
             $result->jsonGet('errors.0.message')
         );
 
-        $this->query('
+        $this->graphQL('
         {
-            users2(count: 10) {
+            users2(first: 10) {
                 data {
                     id
                     name

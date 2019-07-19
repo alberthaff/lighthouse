@@ -2,10 +2,10 @@
 
 namespace Tests\Integration\Schema\Directives;
 
+use Tests\Constants;
 use Tests\DBTestCase;
 use Tests\Utils\Models\Task;
 use Tests\Utils\Models\User;
-use CreateTestbenchTagsTable;
 
 class CreateDirectiveTest extends DBTestCase
 {
@@ -25,7 +25,7 @@ class CreateDirectiveTest extends DBTestCase
         }
         '.$this->placeholderQuery();
 
-        $this->query('
+        $this->graphQL('
         mutation {
             createCompany(name: "foo") {
                 id
@@ -62,7 +62,7 @@ class CreateDirectiveTest extends DBTestCase
         }
         '.$this->placeholderQuery();
 
-        $this->query('
+        $this->graphQL('
         mutation {
             createCompany(input: {
                 name: "foo"
@@ -97,7 +97,7 @@ class CreateDirectiveTest extends DBTestCase
         }
         '.$this->placeholderQuery();
 
-        $this->query('
+        $this->graphQL('
         mutation {
             createTag(name: "foobar"){
                 name
@@ -108,7 +108,7 @@ class CreateDirectiveTest extends DBTestCase
             'data' => [
                 'createTag' => [
                     'name' => 'foobar',
-                    'default_string' => CreateTestbenchTagsTable::DEFAULT_STRING,
+                    'default_string' => Constants::TAGS_DEFAULT_STRING,
                 ],
             ],
         ]);
@@ -154,7 +154,7 @@ class CreateDirectiveTest extends DBTestCase
         }
         '.$this->placeholderQuery();
 
-        $this->query('
+        $this->graphQL('
         mutation {
             createUser(input: {
                 name: "foo"
@@ -224,7 +224,7 @@ class CreateDirectiveTest extends DBTestCase
         }
         '.$this->placeholderQuery();
 
-        $this->query('
+        $this->graphQL('
         mutation {
             createUser(input: {
                 name: "foo"
@@ -294,7 +294,7 @@ class CreateDirectiveTest extends DBTestCase
         }
         '.$this->placeholderQuery();
 
-        $this->query('
+        $this->graphQL('
         mutation {
             createUser(input: {
                 name: "foo"

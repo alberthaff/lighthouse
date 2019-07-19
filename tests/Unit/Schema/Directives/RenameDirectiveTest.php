@@ -12,11 +12,9 @@ class RenameDirectiveTest extends TestCase
      */
     public function itCanRenameAField(): void
     {
-        $resolver = addslashes(self::class).'@resolve';
-
         $this->schema = "
         type Query {
-            bar: Bar @field(resolver: \"{$resolver}\")
+            bar: Bar @field(resolver: \"{$this->qualifyTestResolver()}\")
         }
         
         type Bar {
@@ -24,7 +22,7 @@ class RenameDirectiveTest extends TestCase
         }
         ";
 
-        $this->query('
+        $this->graphQL('
         {
             bar {
                 bar
@@ -57,7 +55,7 @@ class RenameDirectiveTest extends TestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             fooBar
         }

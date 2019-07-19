@@ -1,15 +1,23 @@
 <?php
 
-app('router')->group(config('lighthouse.route', []), function (): void {
-    $routeName = config('lighthouse.route_name', 'graphql');
-    $controller = config('lighthouse.controller');
+use Illuminate\Support\Str;
 
-    $methods = config('lighthouse.route_enable_get', false)
-        ? ['GET', 'POST']
-        : ['POST'];
+if ($routeConfig = config('lighthouse.route')) {
+    /** @var \Illuminate\Contracts\Routing\Registrar $router */
+    $router = app('router');
 
-    app('router')->match($methods, $routeName, [
-        'as' => 'lighthouse.graphql',
-        'uses' => $controller,
-    ]);
-});
+    $method = 'addRoute';
+    if (Str::startsWith(app()->version(), '5.5.')) {
+        $method = 'match';
+    }
+
+    $router->$method(
+        ['GET', 'POST'],
+        $routeConfig['uri'] ?? 'graphql',
+        [
+            'as' => $routeConfig['name'] ?? 'graphql',
+            'uses' => \Nuwave\Lighthouse\Support\Http\Controllers\GraphQLController::class.'@query',
+            'middleware' => $routeConfig['middleware'],
+        ]
+    );
+}

@@ -9,6 +9,7 @@ use Tests\Utils\Models\Company;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Collection;
 use Nuwave\Lighthouse\Defer\DeferServiceProvider;
+use Illuminate\Support\Collection as BaseCollection;
 
 class DeferDBTest extends DBTestCase
 {
@@ -44,7 +45,7 @@ class DeferDBTest extends DBTestCase
             'company_id' => $company->getKey(),
         ]);
 
-        $resolver = addslashes(self::class).'@resolve';
+        $resolver = $this->qualifyTestResolver();
         self::$resolver = function () use ($user): User {
             return $user;
         };
@@ -103,7 +104,7 @@ class DeferDBTest extends DBTestCase
         ]);
         $user = $users[0];
 
-        $resolver = addslashes(self::class).'@resolve';
+        $resolver = $this->qualifyTestResolver();
         self::$resolver = function () use ($user): User {
             return $user;
         };
@@ -164,7 +165,7 @@ class DeferDBTest extends DBTestCase
                     return ['email' => $user->email];
                 })
                 ->values()
-                ->toArray(),
+                ->all(),
             $deferredUsers['user.company.users']['data']
         );
     }
@@ -183,7 +184,7 @@ class DeferDBTest extends DBTestCase
                 ]);
             });
 
-        $resolver = addslashes(self::class).'@resolve';
+        $resolver = $this->qualifyTestResolver();
         self::$resolver = function () use ($companies): Collection {
             return $companies;
         };
@@ -245,14 +246,16 @@ class DeferDBTest extends DBTestCase
                             'company' => null,
                         ];
                     })
-                    ->toArray(),
+                    ->all(),
                 $deferredUsers[$key]['data']
             );
         });
 
         $deferredCompanies = $chunks[2];
+
         $this->assertCount(6, $deferredCompanies);
-        (new Collection($deferredCompanies))->toBase()->each(function (array $item) use ($companies): void {
+
+        (new BaseCollection($deferredCompanies))->each(function (array $item) use ($companies): void {
             $item = $item['data'];
             $this->assertArrayHasKey('name', $item);
 

@@ -8,8 +8,11 @@ use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Language\AST\FieldDefinitionNode;
 use Nuwave\Lighthouse\Schema\AST\DocumentAST;
 use Nuwave\Lighthouse\Schema\Values\FieldValue;
+use Nuwave\Lighthouse\Pagination\PaginationType;
+use Nuwave\Lighthouse\Pagination\PaginationUtils;
 use GraphQL\Language\AST\ObjectTypeDefinitionNode;
 use Nuwave\Lighthouse\Execution\DataLoader\BatchLoader;
+use Nuwave\Lighthouse\Pagination\PaginationManipulator;
 use Nuwave\Lighthouse\Support\Contracts\GraphQLContext;
 use Nuwave\Lighthouse\Execution\DataLoader\RelationBatchLoader;
 
@@ -25,70 +28,71 @@ abstract class RelationDirective extends BaseDirective
     {
         return $value->setResolver(
             function (Model $parent, array $args, GraphQLContext $context, ResolveInfo $resolveInfo): Deferred {
-                return BatchLoader::instance(
-                    RelationBatchLoader::class,
-                    $resolveInfo->path,
-                    $this->toLoaderConstructorArguments($parent, $args, $context, $resolveInfo)
-                )->load(
-                    $parent->getKey(),
-                    ['parent' => $parent]
-                );
+                $constructorArgs = [
+                    'relationName' => $this->directiveArgValue('relation', $this->definitionNode->name->value),
+                    'args' => $args,
+                    'scopes' => $this->directiveArgValue('scopes', []),
+                    'resolveInfo' => $resolveInfo,
+                ];
+
+                if ($paginationType = $this->paginationType()) {
+                    /** @var int $first */
+                    /** @var int $page */
+                    [$first, $page] = PaginationUtils::extractArgs($args, $paginationType, $this->paginateMaxCount());
+
+                    $constructorArgs += [
+                        'first' => $first,
+                        'page' => $page,
+                    ];
+                }
+
+                return BatchLoader
+                    ::instance(
+                        RelationBatchLoader::class,
+                        $resolveInfo->path,
+                        $constructorArgs
+                    )
+                    ->load(
+                        $parent->getKey(),
+                        ['parent' => $parent]
+                    );
             }
         );
     }
 
     /**
+     * @param  \Nuwave\Lighthouse\Schema\AST\DocumentAST  $documentAST
      * @param  \GraphQL\Language\AST\FieldDefinitionNode  $fieldDefinition
      * @param  \GraphQL\Language\AST\ObjectTypeDefinitionNode  $parentType
-     * @param  \Nuwave\Lighthouse\Schema\AST\DocumentAST  $current
-     * @return \Nuwave\Lighthouse\Schema\AST\DocumentAST
+     * @return void
      */
-    public function manipulateSchema(FieldDefinitionNode $fieldDefinition, ObjectTypeDefinitionNode $parentType, DocumentAST $current): DocumentAST
+    public function manipulateFieldDefinition(DocumentAST &$documentAST, FieldDefinitionNode &$fieldDefinition, ObjectTypeDefinitionNode &$parentType): void
     {
-        $paginationType = $this->directiveArgValue('type');
+        $paginationType = $this->paginationType();
 
         // We default to not changing the field if no pagination type is set explicitly.
         // This makes sense for relations, as there should not be too many entries.
         if (! $paginationType) {
-            return $current;
+            return;
         }
 
-        return PaginationManipulator::transformToPaginatedField(
+        PaginationManipulator::transformToPaginatedField(
             $paginationType,
             $fieldDefinition,
             $parentType,
-            $current,
+            $documentAST,
             $this->directiveArgValue('defaultCount'),
             $this->paginateMaxCount()
         );
     }
 
-    /**
-     * Transform resolver args to an array suitable for constructing a BatchLoader.
-     *
-     * @see \Nuwave\Lighthouse\Execution\DataLoader\RelationBatchLoader
-     *
-     * @param  \Illuminate\Database\Eloquent\Model  $parent
-     * @param  mixed[]  $args
-     * @param  \Nuwave\Lighthouse\Support\Contracts\GraphQLContext  $context
-     * @param  \GraphQL\Type\Definition\ResolveInfo  $resolveInfo
-     * @return mixed[]
-     */
-    protected function toLoaderConstructorArguments(Model $parent, array $args, GraphQLContext $context, ResolveInfo $resolveInfo): array
+    protected function paginationType(): ?PaginationType
     {
-        $constructorArgs = [
-            'relationName' => $this->directiveArgValue('relation', $this->definitionNode->name->value),
-            'args' => $args,
-            'scopes' => $this->directiveArgValue('scopes', []),
-            'resolveInfo' => $resolveInfo,
-            'paginateMaxCount' => $this->paginateMaxCount(),
-        ];
-
         if ($paginationType = $this->directiveArgValue('type')) {
-            $constructorArgs += ['paginationType' => PaginationManipulator::assertValidPaginationType($paginationType)];
+            return new PaginationType($paginationType);
         }
 
-        return $constructorArgs;
+        return null;
     }
 
     /**

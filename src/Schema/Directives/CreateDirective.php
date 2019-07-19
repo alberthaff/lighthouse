@@ -47,21 +47,14 @@ class CreateDirective extends BaseDirective implements FieldResolver
             function ($root, array $args): Model {
                 $modelClassName = $this->getModelClass();
                 /** @var \Illuminate\Database\Eloquent\Model $model */
-                $model = new $modelClassName();
-
-                /*
-                 * @deprecated in favour of @spread
-                 */
-                if ($this->directiveArgValue('flatten', false)) {
-                    $args = reset($args);
-                }
+                $model = new $modelClassName;
 
                 $executeMutation = function () use ($model, $args): Model {
                     return MutationExecutor::executeCreate($model, new Collection($args))->refresh();
                 };
 
                 return config('lighthouse.transactional_mutations', true)
-                    ? $this->databaseManager->connection()->transaction($executeMutation)
+                    ? $this->databaseManager->connection($model->getConnectionName())->transaction($executeMutation)
                     : $executeMutation();
             }
         );

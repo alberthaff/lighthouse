@@ -9,7 +9,7 @@ class MorphToManyTest extends DBTestCase
 {
     protected $schema = '
     type Mutation {
-        createTask(input: CreateTaskInput!): Task @create(flatten: true)
+        createTask(input: CreateTaskInput! @spread): Task @create
     }
     
     input CreateTaskInput {
@@ -53,7 +53,7 @@ class MorphToManyTest extends DBTestCase
     {
         $id = factory(Tag::class)->create(['name' => 'php'])->id;
 
-        $this->query('
+        $this->graphQL('
         mutation {
             createTask(input: {
                 name: "Finish tests"
@@ -86,7 +86,7 @@ class MorphToManyTest extends DBTestCase
     {
         $id = factory(Tag::class)->create(['name' => 'php'])->id;
 
-        $this->query('
+        $this->graphQL('
         mutation {
             createTask(input: {
                 name: "Finish tests"
@@ -117,7 +117,7 @@ class MorphToManyTest extends DBTestCase
      */
     public function itCanCreateANewTagRelationByUsingCreate(): void
     {
-        $this->query('
+        $this->graphQL('
         mutation {
             createTask(input: {
                 name: "Finish tests"

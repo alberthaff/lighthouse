@@ -59,14 +59,7 @@ class UpdateDirective extends BaseDirective implements FieldResolver
             function ($root, array $args): Model {
                 $modelClassName = $this->getModelClass();
                 /** @var \Illuminate\Database\Eloquent\Model $model */
-                $model = new $modelClassName();
-
-                /*
-                 * @deprecated in favour of @spread
-                 */
-                if ($this->directiveArgValue('flatten', false)) {
-                    $args = reset($args);
-                }
+                $model = new $modelClassName;
 
                 if ($this->directiveArgValue('globalId', false)) {
                     $args['id'] = $this->globalId->decodeId($args['id']);
@@ -77,7 +70,7 @@ class UpdateDirective extends BaseDirective implements FieldResolver
                 };
 
                 return config('lighthouse.transactional_mutations', true)
-                    ? $this->databaseManager->connection()->transaction($executeMutation)
+                    ? $this->databaseManager->connection($model->getConnectionName())->transaction($executeMutation)
                     : $executeMutation();
             }
         );

@@ -69,7 +69,7 @@ class GraphQLTest extends DBTestCase
      */
     public function itResolvesQueryViaPostRequest(): void
     {
-        $this->query('
+        $this->graphQL('
         query UserWithTasks {
             user {
                 email
@@ -87,7 +87,8 @@ class GraphQLTest extends DBTestCase
                             function (Task $task): array {
                                 return ['name' => $task->name];
                             }
-                        )->toArray(),
+                        )
+                        ->all(),
                 ],
             ],
         ]);
@@ -121,7 +122,7 @@ class GraphQLTest extends DBTestCase
                         ->map(function (Task $task): array {
                             return ['name' => $task->name];
                         })
-                        ->toArray(),
+                        ->all(),
                 ],
             ],
         ]);
@@ -202,13 +203,18 @@ class GraphQLTest extends DBTestCase
      */
     public function itRejectsInvalidQuery(): void
     {
-        $result = $this->query('
+        $result = $this->graphQL('
         {
             nonExistingField
         }
         ');
 
-        $this->assertContains(
+        // TODO remove as we stop supporting Laravel 5.5/PHPUnit 6
+        $assertContains = method_exists($this, 'assertStringContainsString')
+            ? 'assertStringContainsString'
+            : 'assertContains';
+
+        $this->{$assertContains}(
             'nonExistingField',
             $result->jsonGet('errors.0.message')
         );
@@ -232,7 +238,7 @@ class GraphQLTest extends DBTestCase
      */
     public function itResolvesQueryViaMultipartRequest(): void
     {
-        $this->postGraphQLMultipart(
+        $this->multipartGraphQL(
             [
                 'operations' => /* @lang JSON */
                     '
@@ -260,12 +266,12 @@ class GraphQLTest extends DBTestCase
      */
     public function itResolvesUploadViaMultipartRequest(): void
     {
-        $this->postGraphQLMultipart(
+        $this->multipartGraphQL(
             [
                 'operations' => /* @lang JSON */
                     '
                     {
-                        "query": "mutation Upload($file: Upload!) { upload(file: $file)}",
+                        "query": "mutation Upload($file: Upload!) { upload(file: $file) }",
                         "variables": {
                             "file": null
                         }
@@ -294,19 +300,19 @@ class GraphQLTest extends DBTestCase
      */
     public function itResolvesUploadViaBatchedMultipartRequest(): void
     {
-        $this->postGraphQLMultipart(
+        $this->multipartGraphQL(
             [
                 'operations' => /* @lang JSON */
                     '
                     [
                         {
-                            "query": "mutation Upload($file: Upload!) { upload(file: $file)}",
+                            "query": "mutation Upload($file: Upload!) { upload(file: $file) }",
                             "variables": {
                                 "file": null
                             }
                         },
                         {
-                            "query": "mutation Upload($file: Upload!) { upload(file: $file)}",
+                            "query": "mutation Upload($file: Upload!) { upload(file: $file)} ",
                             "variables": {
                                 "file": null
                             }

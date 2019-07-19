@@ -7,16 +7,6 @@ use Tests\Utils\Models\User;
 
 class BuilderTest extends DBTestCase
 {
-    protected function getEnvironmentSetUp($app)
-    {
-        parent::getEnvironmentSetUp($app);
-
-        /*
-         * @deprecated once the new directives become the standard
-         */
-        $app['config']->set('new_between_directives', true);
-    }
-
     /**
      * @var \Illuminate\Database\Eloquent\Collection<\Tests\Utils\Models\User>
      */
@@ -47,7 +37,7 @@ class BuilderTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             users(id: '.$this->users->first()->getKey().') {
                 id
@@ -71,7 +61,7 @@ class BuilderTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             users(
                 input: {
@@ -95,7 +85,7 @@ class BuilderTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             users(id: '.$this->users->first()->getKey().') {
                 id
@@ -118,7 +108,7 @@ class BuilderTest extends DBTestCase
         $user1 = $this->users->first()->getKey();
         $user2 = $this->users->last()->getKey();
 
-        $this->query('
+        $this->graphQL('
         {
             users(include: ['.$user1.', '.$user2.']) {
                 id
@@ -141,7 +131,7 @@ class BuilderTest extends DBTestCase
         $user1 = $this->users->first()->getKey();
         $user2 = $this->users->last()->getKey();
 
-        $this->query('
+        $this->graphQL('
         {
             users(exclude: ['.$user1.', '.$user2.']) {
                 id
@@ -163,7 +153,7 @@ class BuilderTest extends DBTestCase
 
         $user1 = $this->users->first()->getKey();
 
-        $this->query('
+        $this->graphQL('
         {
             users(id: '.$user1.') {
                 id
@@ -189,7 +179,7 @@ class BuilderTest extends DBTestCase
         $user1 = $this->users->first()->getKey();
         $user2 = $this->users->last()->getKey();
 
-        $this->query('
+        $this->graphQL('
         {
             users(start: '.$user1.' end: '.$user2.') {
                 id
@@ -222,7 +212,7 @@ class BuilderTest extends DBTestCase
         $start = now()->subDay()->startOfDay()->format('Y-m-d H:i:s');
         $end = now()->subDay()->endOfDay()->format('Y-m-d H:i:s');
 
-        $this->query('
+        $this->graphQL('
         {
             users(
                 createdBetween: ["'.$start.'", "'.$end.'"]
@@ -262,7 +252,7 @@ class BuilderTest extends DBTestCase
         $start = now()->subDay()->startOfDay()->format('Y-m-d H:i:s');
         $end = now()->subDay()->endOfDay()->format('Y-m-d H:i:s');
 
-        $this->query('
+        $this->graphQL('
         {
             users(
                 created: {
@@ -300,7 +290,7 @@ class BuilderTest extends DBTestCase
         $start = now()->subDay()->startOfDay()->format('Y-m-d H:i:s');
         $end = now()->subDay()->endOfDay()->format('Y-m-d H:i:s');
 
-        $this->query('
+        $this->graphQL('
         {
             users(
                 notCreatedBetween: ["'.$start.'", "'.$end.'"]
@@ -334,7 +324,7 @@ class BuilderTest extends DBTestCase
 
         $year = now()->subYear()->format('Y');
 
-        $this->query('
+        $this->graphQL('
         {
             users(created_at: "'.$year.'") {
                 id
@@ -357,7 +347,7 @@ class BuilderTest extends DBTestCase
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             users(name: "'.$this->users->first()->name.'") {
                 id

@@ -6,8 +6,9 @@ use Tests\DBTestCase;
 use Tests\Utils\Models\Team;
 use Tests\Utils\Models\User;
 use GraphQL\Type\Definition\Type;
+use Illuminate\Support\Collection;
 use Nuwave\Lighthouse\Schema\TypeRegistry;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 class InterfaceTest extends DBTestCase
 {
@@ -34,11 +35,11 @@ class InterfaceTest extends DBTestCase
         }
         
         type Query {
-            namedThings: [Nameable!]! @field(resolver: "'.addslashes(self::class).'@fetchResults")
+            namedThings: [Nameable!]! @field(resolver: "'.$this->qualifyTestResolver('fetchResults').'")
         }
         ';
 
-        $result = $this->query('
+        $result = $this->graphQL('
         {
             namedThings {
                 name
@@ -70,7 +71,7 @@ class InterfaceTest extends DBTestCase
     public function itCanUseCustomTypeResolver(): void
     {
         $this->schema = '
-        interface Nameable @interface(resolveType: "'.addslashes(self::class).'@resolveType"){
+        interface Nameable @interface(resolveType: "'.$this->qualifyTestResolver('resolveType').'"){
             name: String!
         }
 
@@ -80,11 +81,11 @@ class InterfaceTest extends DBTestCase
         }
 
         type Query {
-            namedThings: Nameable @field(resolver: "'.addslashes(self::class).'@fetchGuy")
+            namedThings: Nameable @field(resolver: "'.$this->qualifyTestResolver('fetchGuy').'")
         }
         ';
 
-        $this->query('
+        $this->graphQL('
         {
             namedThings {
                 name
@@ -123,11 +124,12 @@ class InterfaceTest extends DBTestCase
         }
         
         type Query {
-            namedThings: [Nameable!]! @field(resolver: "'.addslashes(self::class).'@fetchResults")
+            namedThings: [Nameable!]! @field(resolver: "'.$this->qualifyTestResolver('fetchResults').'")
         }
         ';
 
-        $result = $this->query('{
+        $result = $this->graphQL('
+        {
             __schema {
                 types {
                     kind
@@ -140,14 +142,13 @@ class InterfaceTest extends DBTestCase
         }
         ');
 
-        $interface = Collection ::make($result->jsonGet('data.__schema.types'))
-            ->toBase()
+        $interface = (new Collection($result->jsonGet('data.__schema.types')))
             ->firstWhere('name', 'Nameable');
 
         $this->assertCount(2, $interface['possibleTypes']);
     }
 
-    public function fetchResults(): Collection
+    public function fetchResults(): EloquentCollection
     {
         $users = User::all();
         $teams = Team::all();

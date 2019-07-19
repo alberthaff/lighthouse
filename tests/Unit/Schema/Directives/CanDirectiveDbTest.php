@@ -5,31 +5,30 @@ namespace Tests\Unit\Schema\Directives;
 use Tests\DBTestCase;
 use Tests\Utils\Models\Post;
 use Tests\Utils\Models\User;
+use Tests\Utils\Policies\UserPolicy;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Nuwave\Lighthouse\Exceptions\AuthorizationException;
 
 class CanDirectiveDbTest extends DBTestCase
 {
     /**
      * @test
-     * @dataProvider provideAcceptableArgumentNames
-     *
-     * @param  string  $argumentName
-     * @return void
      */
-    public function itPassesIfModelInstanceIsNotNull(string $argumentName): void
+    public function itQueriesForSpecificModel(): void
     {
-        $user = User::create([
-            'name' => 'admin',
-        ]);
-        $this->be($user);
+        $this->be(
+            new User([
+                'name' => UserPolicy::ADMIN,
+            ])
+        );
 
         $user = factory(User::class)->create(['name' => 'foo']);
 
         $this->schema = '
         type Query {
             user(id: ID @eq): User
-                @can('.$argumentName.': "view")
-                @field(resolver: "'.addslashes(self::class).'@resolveUser")
+                @can(ability: "view", find: "id")
+                @field(resolver: "'.$this->qualifyTestResolver('resolveUser').'")
         }
         
         type User {
@@ -38,7 +37,7 @@ class CanDirectiveDbTest extends DBTestCase
         }
         ';
 
-        $this->query("
+        $this->graphQL("
         {
             user(id: {$user->getKey()}) {
                 name
@@ -55,17 +54,48 @@ class CanDirectiveDbTest extends DBTestCase
 
     /**
      * @test
-     * @dataProvider provideAcceptableArgumentNames
-     *
-     * @param  string  $argumentName
-     * @return void
      */
-    public function itThrowsIfNotAuthorized(string $argumentName): void
+    public function itFailsToFindSpecificModel(): void
     {
-        $user = User::create([
-            'name' => 'admin',
-        ]);
-        $this->be($user);
+        $this->be(
+            new User([
+                'name' => UserPolicy::ADMIN,
+            ])
+        );
+
+        $this->schema = '
+        type Query {
+            user(id: ID @eq): User
+                @can(ability: "view", find: "id")
+                @field(resolver: "'.$this->qualifyTestResolver('resolveUser').'")
+        }
+        
+        type User {
+            id: ID!
+            name: String!
+        }
+        ';
+
+        $this->expectException(ModelNotFoundException::class);
+        $this->graphQL('
+        {
+            user(id: "not-present") {
+                name
+            }
+        }
+        ');
+    }
+
+    /**
+     * @test
+     */
+    public function itThrowsIfNotAuthorized(): void
+    {
+        $this->be(
+            new User([
+                'name' => UserPolicy::ADMIN,
+            ])
+        );
 
         $userB = User::create([
             'name' => 'foo',
@@ -78,9 +108,9 @@ class CanDirectiveDbTest extends DBTestCase
 
         $this->schema = '
         type Query {
-            post(id: ID @eq): Post
-                @can('.$argumentName.': "view")
-                @field(resolver: "'.addslashes(self::class).'@resolvePost")
+            post(foo: ID @eq): Post
+                @can(ability: "view", find: "foo")
+                @field(resolver: "'.$this->qualifyTestResolver('resolvePost').'")
         }
         
         type Post {
@@ -89,33 +119,74 @@ class CanDirectiveDbTest extends DBTestCase
         }
         ';
 
-        $this->query("
+        $this->graphQL("
         {
-            post(id: {$postB->getKey()}) {
+            post(foo: {$postB->getKey()}) {
                 title
             }
         }
         ")->assertErrorCategory(AuthorizationException::CATEGORY);
     }
 
-    public function resolveUser($root, array $args)
+    /**
+     * @test
+     */
+    public function itCanHandleMultipleModels(): void
+    {
+        $user = User::create([
+            'name' => UserPolicy::ADMIN,
+        ]);
+        $this->be($user);
+
+        $postA = factory(Post::class)->create([
+            'user_id' => $user->getKey(),
+            'title' => 'Harry Potter and the Half-Blood Prince',
+        ]);
+        $postB = factory(Post::class)->create([
+            'user_id' => $user->getKey(),
+            'title' => 'Harry Potter and the Chamber of Secrets',
+        ]);
+
+        $this->schema = '
+        type Query {
+            deletePosts(ids: [ID!]!): [Post!]!
+                @delete
+                @can(ability: "delete", find: "ids")
+        }
+        
+        type Post {
+            id: ID!
+            title: String!
+        }
+        ';
+
+        $this->graphQL("
+        {
+            deletePosts(ids: [{$postA->getKey()}, {$postB->getKey()}]) {
+                title
+            }
+        }
+        ")->assertJson([
+            'data' => [
+                'deletePosts' => [
+                    [
+                        'title' => 'Harry Potter and the Half-Blood Prince',
+                    ],
+                    [
+                        'title' => 'Harry Potter and the Chamber of Secrets',
+                    ],
+                ],
+            ],
+        ]);
+    }
+
+    public function resolveUser($root, array $args): ?User
     {
         return User::where('id', $args['id'])->first();
     }
 
-    public function resolvePost($root, array $args)
+    public function resolvePost($root, array $args): ?User
     {
         return Post::where('id', $args['id'])->first();
-    }
-
-    /**
-     * @return array[]
-     */
-    public function provideAcceptableArgumentNames(): array
-    {
-        return [
-            ['if'],
-            ['ability'],
-        ];
     }
 }

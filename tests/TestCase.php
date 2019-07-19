@@ -11,14 +11,16 @@ use Laravel\Scout\ScoutServiceProvider;
 use Tests\Utils\Policies\AuthServiceProvider;
 use Orchestra\Database\ConsoleServiceProvider;
 use Illuminate\Foundation\Testing\TestResponse;
-use Nuwave\Lighthouse\Execution\GraphQLRequest;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Nuwave\Lighthouse\LighthouseServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
+use Nuwave\Lighthouse\Testing\MakesGraphQLRequests;
 use Nuwave\Lighthouse\Schema\Source\SchemaSourceProvider;
 
 abstract class TestCase extends BaseTestCase
 {
+    use MakesGraphQLRequests;
+
     /**
      * This variable is injected the main GraphQL class
      * during execution of each test. It may be set either
@@ -54,47 +56,62 @@ abstract class TestCase extends BaseTestCase
     {
         $app->bind(
             SchemaSourceProvider::class,
-            function () {
+            function (): TestSchemaProvider {
                 return new TestSchemaProvider($this->schema);
             }
         );
 
-        $app['config']->set('lighthouse', [
-            'namespaces' => [
-                'models' => [
-                    'Tests\\Utils\\Models',
-                    'Tests\\Utils\\ModelsSecondary',
-                ],
-                'queries' => [
-                    'Tests\\Utils\\Queries',
-                    'Tests\\Utils\\QueriesSecondary',
-                ],
-                'mutations' => [
-                    'Tests\\Utils\\Mutations',
-                    'Tests\\Utils\\MutationsSecondary',
-                ],
-                'subscriptions' => 'Tests\\Utils\\Subscriptions',
-                'interfaces' => [
-                    'Tests\\Utils\\Interfaces',
-                    'Tests\\Utils\\InterfacesSecondary',
-                ],
-                'scalars' => [
-                    'Tests\\Utils\\Scalars',
-                    'Tests\\Utils\\ScalarsSecondary',
-                ],
-                'unions' => [
-                    'Tests\\Utils\\Unions',
-                    'Tests\\Utils\\UnionsSecondary',
-                ],
+        /** @var \Illuminate\Contracts\Config\Repository $config */
+        $config = $app['config'];
+
+        $config->set('lighthouse.namespaces', [
+            'models' => [
+                'Tests\\Utils\\Models',
+                'Tests\\Utils\\ModelsSecondary',
             ],
-            'debug' => Debug::INCLUDE_DEBUG_MESSAGE | Debug::INCLUDE_TRACE /*| Debug::RETHROW_INTERNAL_EXCEPTIONS*/ | Debug::RETHROW_UNSAFE_EXCEPTIONS,
-            'subscriptions' => [
-                'storage' => 'array',
-                'broadcaster' => 'log',
+            'queries' => [
+                'Tests\\Utils\\Queries',
+                'Tests\\Utils\\QueriesSecondary',
+            ],
+            'mutations' => [
+                'Tests\\Utils\\Mutations',
+                'Tests\\Utils\\MutationsSecondary',
+            ],
+            'subscriptions' => 'Tests\\Utils\\Subscriptions',
+            'interfaces' => [
+                'Tests\\Utils\\Interfaces',
+                'Tests\\Utils\\InterfacesSecondary',
+            ],
+            'scalars' => [
+                'Tests\\Utils\\Scalars',
+                'Tests\\Utils\\ScalarsSecondary',
+            ],
+            'unions' => [
+                'Tests\\Utils\\Unions',
+                'Tests\\Utils\\UnionsSecondary',
+            ],
+            'directives' => [
+                'Tests\\Utils\\Directives',
             ],
         ]);
 
-        $app['config']->set('app.debug', true);
+        $config->set(
+            'lighthouse.debug',
+            Debug::INCLUDE_DEBUG_MESSAGE
+            | Debug::INCLUDE_TRACE
+            /*| Debug::RETHROW_INTERNAL_EXCEPTIONS*/
+            | Debug::RETHROW_UNSAFE_EXCEPTIONS
+        );
+
+        $config->set(
+            'lighthouse.subscriptions',
+            [
+                'storage' => 'array',
+                'broadcaster' => 'log',
+            ]
+        );
+
+        $config->set('app.debug', true);
 
         TestResponse::macro(
             'assertErrorCategory',
@@ -191,62 +208,6 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
-     * Execute a query as if it was sent as a request to the server.
-     *
-     * @param  string  $query
-     * @return \Illuminate\Foundation\Testing\TestResponse
-     */
-    protected function query(string $query): TestResponse
-    {
-        return $this->postGraphQL(
-            [
-                'query' => $query,
-            ]
-        );
-    }
-
-    /**
-     * Execute a query as if it was sent as a request to the server.
-     *
-     * @param  mixed[]  $data
-     * @param  mixed[]  $headers
-     * @return \Illuminate\Foundation\Testing\TestResponse
-     */
-    protected function postGraphQL(array $data, array $headers = []): TestResponse
-    {
-        $this->app->forgetInstance(GraphQLRequest::class);
-
-        return $this->postJson(
-            'graphql',
-            $data
-        );
-    }
-
-    /**
-     * Send a multipart form request.
-     *
-     * This is used for file uploads conforming to the specification:
-     * https://github.com/jaydenseric/graphql-multipart-request-spec
-     *
-     * @param  mixed[]  $parameters
-     * @param  mixed[]  $files
-     * @return \Illuminate\Foundation\Testing\TestResponse
-     */
-    protected function postGraphQLMultipart(array $parameters, array $files): TestResponse
-    {
-        return $this->call(
-            'POST',
-            'graphql',
-            $parameters,
-            [],
-            $files,
-            $this->transformHeadersToServerVars([
-                'Content-Type' => 'multipart/form-data',
-            ])
-        );
-    }
-
-    /**
      * Build an executable schema from a SDL string, adding on a default Query type.
      *
      * @param  string  $schema
@@ -255,8 +216,7 @@ abstract class TestCase extends BaseTestCase
     protected function buildSchemaWithPlaceholderQuery(string $schema): Schema
     {
         return $this->buildSchema(
-            $schema
-            .$this->placeholderQuery()
+            $schema.$this->placeholderQuery()
         );
     }
 
@@ -288,5 +248,16 @@ abstract class TestCase extends BaseTestCase
             foo: Int
         }
         ';
+    }
+
+    /**
+     * Get a fully qualified reference to a method that is defined on the test class.
+     *
+     * @param  string  $method
+     * @return string
+     */
+    protected function qualifyTestResolver(string $method = 'resolve'): string
+    {
+        return addslashes(static::class).'@'.$method;
     }
 }

@@ -3,7 +3,7 @@
 namespace Nuwave\Lighthouse\Schema\Directives;
 
 use Closure;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\Model;
 use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Nuwave\Lighthouse\Schema\Values\FieldValue;
@@ -13,6 +13,21 @@ use Nuwave\Lighthouse\Support\Contracts\FieldMiddleware;
 
 class CanDirective extends BaseDirective implements FieldMiddleware
 {
+    /**
+     * @var \Illuminate\Contracts\Auth\Access\Gate
+     */
+    protected $gate;
+
+    /**
+     * CanDirective constructor.
+     * @param  \Illuminate\Contracts\Auth\Access\Gate  $gate
+     * @return void
+     */
+    public function __construct(Gate $gate)
+    {
+        $this->gate = $gate;
+    }
+
     /**
      * Name of the directive.
      *
@@ -26,32 +41,33 @@ class CanDirective extends BaseDirective implements FieldMiddleware
     /**
      * Ensure the user is authorized to access this field.
      *
-     * @param  \Nuwave\Lighthouse\Schema\Values\FieldValue  $value
+     * @param  \Nuwave\Lighthouse\Schema\Values\FieldValue  $fieldValue
      * @param  \Closure  $next
      * @return \Nuwave\Lighthouse\Schema\Values\FieldValue
      */
-    public function handleField(FieldValue $value, Closure $next): FieldValue
+    public function handleField(FieldValue $fieldValue, Closure $next): FieldValue
     {
-        $previousResolver = $value->getResolver();
+        $previousResolver = $fieldValue->getResolver();
 
         return $next(
-            $value->setResolver(
+            $fieldValue->setResolver(
                 function ($root, array $args, GraphQLContext $context, ResolveInfo $resolveInfo) use ($previousResolver) {
-                    $gate = app(Gate::class);
-                    $gateArguments = $this->getGateArguments();
+                    $modelClass = $this->getModelClass();
 
-                    if ($id = $args['id'] ?? null) {
-                        /** @var \Illuminate\Database\Eloquent\Model $modelClass */
-                        $modelClass = $this->getModelClass();
+                    if ($find = $this->directiveArgValue('find')) {
+                        $modelOrModels = $modelClass::findOrFail($args[$find]);
 
-                        $gateArguments[0] = $modelClass::findOrFail($id);
-                    }
-
-                    $this->getAbilities()->each(
-                        function (string $ability) use ($context, $gate, $gateArguments): void {
-                            $this->authorize($context->user(), $gate, $ability, $gateArguments);
+                        if ($modelOrModels instanceof Model) {
+                            $modelOrModels = [$modelOrModels];
                         }
-                    );
+
+                        /** @var \Illuminate\Database\Eloquent\Model $model */
+                        foreach ($modelOrModels as $model) {
+                            $this->authorize($context->user(), $model);
+                        }
+                    } else {
+                        $this->authorize($context->user(), $modelClass);
+                    }
 
                     return call_user_func_array($previousResolver, func_get_args());
                 }
@@ -60,54 +76,40 @@ class CanDirective extends BaseDirective implements FieldMiddleware
     }
 
     /**
-     * Get the ability argument.
-     *
-     * For compatibility reasons, the alias "if" will be kept until the next major version.
-     *
-     * @return \Illuminate\Support\Collection<string>
-     */
-    protected function getAbilities(): Collection
-    {
-        return new Collection(
-            $this->directiveArgValue('ability')
-            ?? $this->directiveArgValue('if')
-        );
-    }
-
-    /**
-     * Get additional arguments that are passed to `Gate::check`.
-     *
-     * @return mixed[]
-     */
-    protected function getGateArguments(): array
-    {
-        $modelClass = $this->getModelClass();
-        $args = (array) $this->directiveArgValue('args');
-
-        // The signature of the second argument `$arguments` of `Gate::check`
-        // should be [modelClassName, additionalArg, additionalArg...]
-        array_unshift($args, $modelClass);
-
-        return $args;
-    }
-
-    /**
      * @param  \Illuminate\Contracts\Auth\Authenticatable|null  $user
-     * @param  \Illuminate\Contracts\Auth\Access\Gate  $gate
-     * @param  string  $ability
-     * @param  array  $args
+     * @param  string|\Illuminate\Database\Eloquent\Model  $model
      * @return void
      *
      * @throws \Nuwave\Lighthouse\Exceptions\AuthorizationException
      */
-    protected function authorize($user, Gate $gate, string $ability, array $args): void
+    protected function authorize($user, $model): void
     {
-        $can = $gate->forUser($user)->check($ability, $args);
+        // The signature of the second argument `$arguments` of `Gate::check`
+        // should be [modelClassName, additionalArg, additionalArg...]
+        $arguments = $this->getAdditionalArguments();
+        array_unshift($arguments, $model);
+
+        $can = $this->gate
+            ->forUser($user)
+            ->check(
+                $this->directiveArgValue('ability'),
+                $arguments
+            );
 
         if (! $can) {
             throw new AuthorizationException(
                 "You are not authorized to access {$this->definitionNode->name->value}"
             );
         }
+    }
+
+    /**
+     * Additional arguments that are passed to `Gate::check`.
+     *
+     * @return mixed[]
+     */
+    protected function getAdditionalArguments(): array
+    {
+        return (array) $this->directiveArgValue('args');
     }
 }

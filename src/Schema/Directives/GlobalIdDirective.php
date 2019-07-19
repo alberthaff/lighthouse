@@ -5,6 +5,7 @@ namespace Nuwave\Lighthouse\Schema\Directives;
 use Closure;
 use Nuwave\Lighthouse\Schema\Values\FieldValue;
 use Nuwave\Lighthouse\Support\Contracts\GlobalId;
+use Nuwave\Lighthouse\Exceptions\DefinitionException;
 use Nuwave\Lighthouse\Support\Contracts\FieldMiddleware;
 use Nuwave\Lighthouse\Support\Contracts\ArgTransformerDirective;
 
@@ -41,18 +42,18 @@ class GlobalIdDirective extends BaseDirective implements FieldMiddleware, ArgTra
     /**
      * Resolve the field directive.
      *
-     * @param  \Nuwave\Lighthouse\Schema\Values\FieldValue  $value
+     * @param  \Nuwave\Lighthouse\Schema\Values\FieldValue  $fieldValue
      * @param  \Closure  $next
      * @return \Nuwave\Lighthouse\Schema\Values\FieldValue
      */
-    public function handleField(FieldValue $value, Closure $next): FieldValue
+    public function handleField(FieldValue $fieldValue, Closure $next): FieldValue
     {
-        $type = $value->getParentName();
-        $resolver = $value->getResolver();
+        $type = $fieldValue->getParentName();
+        $resolver = $fieldValue->getResolver();
 
         return $next(
-            $value->setResolver(
-                function () use ($type, $resolver) {
+            $fieldValue->setResolver(
+                function () use ($type, $resolver): string {
                     $resolvedValue = call_user_func_array($resolver, func_get_args());
 
                     return $this->globalId->encode(
@@ -65,13 +66,28 @@ class GlobalIdDirective extends BaseDirective implements FieldMiddleware, ArgTra
     }
 
     /**
-     * Return an array containing the type name and id.
+     * Decodes a global id given as an argument.
      *
      * @param  string  $argumentValue
-     * @return string[]
+     * @return string|string[]
      */
-    public function transform($argumentValue): array
+    public function transform($argumentValue)
     {
+        if ($decode = $this->directiveArgValue('decode')) {
+            switch ($decode) {
+                case 'TYPE':
+                    return $this->globalId->decodeType($argumentValue);
+                case 'ID':
+                    return $this->globalId->decodeID($argumentValue);
+                case 'ARRAY':
+                    return $this->globalId->decode($argumentValue);
+                default:
+                    throw new DefinitionException(
+                        "The only argument of the @globalId directive can only be ID or TYPE, got {$decode}"
+                    );
+            }
+        }
+
         return $this->globalId->decode($argumentValue);
     }
 }
